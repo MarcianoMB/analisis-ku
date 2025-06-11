@@ -1,0 +1,2842 @@
+---
+title: "Progress update Stomag Study"
+editor: visual
+date: "`r Sys.Date()`"
+format:
+  revealjs:
+    theme: simple
+    slide-number: true
+    footer: "Menzies(DS & HI)"
+    transition: fade
+    prefer-html: true
+---
+
+```{r}
+#| label: setup
+
+library(tidyverse)
+library(gt)
+library(readxl)
+theme_set(theme_minimal())
+pacman::p_load(
+rio,          # File import
+here,         # File locator
+skimr,        # get overview of data
+tidyverse,    # data management + ggplot2 graphics 
+gtsummary,    # summary statistics and tests
+rstatix,      # summary statistics and statistical tests
+janitor,      # adding totals and percents to tables
+scales,       # easily convert proportions to percents  
+flextable,     # converting tables to pretty images
+magrittr,
+lubridate,
+wordcloud,
+tm,
+readxl,
+writexl,
+lubridate,
+glue,
+tinytex,      # To render pdf 
+naniar,
+ggplot2,
+rstatix,
+dplyr,
+tidyr)
+
+library(ivo.table)
+```
+
+```{r}
+
+calculate_age <- function(dob, date_visit) {
+  dob <- as.Date(dob)
+  date_visit <- as.Date(date_visit)
+  
+  # Menghitung usia dalam hari
+  age_days <- as.numeric(interval(dob, date_visit) %/% days(1))
+  
+  return(age_days)
+}
+
+#!/usr/bin/env Rscript
+token <- read_excel('api.xlsx') %>% 
+  pull(token)
+
+url <- "https://redcap.menzies.edu.au/redcap/api/"
+formData <- list("token"=token,
+                 content='record',
+                 action='export',
+                 format='csv',
+                 type='flat',
+                 csvDelimiter='',
+                 rawOrLabel='raw',
+                 rawOrLabelHeaders='raw',
+                 exportCheckboxLabel='false',
+                 exportSurveyFields='false',
+                 exportDataAccessGroups='false',
+                 returnFormat='csv'
+)
+response <- httr::POST(url, body = formData, encode = "form")
+rawData <- httr::content(response)
+
+if (httr::status_code(response) != 200) stop("Please Contact DSHI Team")
+# sortedData1 <- sortedData
+sortedData <- rawData
+
+sortedData <- sortedData %>%
+  mutate(Age_new = calculate_age(dob, date_visit_201fb3))
+
+
+```
+
+##  {background-image="background.jpg"}
+
+### Monitoring Reports to Improve Data Quality
+
+##### Total participants enrolled as of today
+
+```{r}
+# participant_summary <- sortedData %>%
+#   mutate(
+#     consent_date = as.Date(consent_date),  
+#     consent_month = floor_date(consent_date, "month"),  # Pakai nama lebih tepat
+#     Participant = ifelse(!is.na(record_id), "Baseline", NA_character_)  
+#   ) %>%
+#   filter(!is.na(consent_month)) %>%
+#   count(consent_month, Participant) %>%
+#   complete(
+#     consent_month = seq.Date(min(consent_month), max(consent_month), by = "month"),
+#     Participant,
+#     fill = list(n = 0)
+#   )
+# # Plot
+# ggplot(participant_summary, aes(x = consent_month, y = n, colour = Participant)) +
+#   geom_point(size = 2) +
+#   geom_line() +
+#   geom_text(aes(label = ifelse(n > 0, n, "")), vjust = -1, size = 3, color = "black") +
+#   scale_x_date(date_labels = "%d-%b", date_breaks = "1 month", expand = c(0, 2)) +
+#   scale_y_continuous(limits = c(0, 70), breaks = seq(0, 70, by = 10), expand = c(0, 1)) +
+#   geom_text(
+#     aes(x = max(consent_month), y = 20, 
+#         label = paste("Total recruited participants:", sum(n, na.rm = TRUE))),
+#     vjust = -0.5, hjust = 1, size = 3.5, color = "black"
+#   ) +
+#   labs(title = "Total recruited participants", x = "Months", y = "N Participants") +
+#   theme_classic() +
+#   theme(axis.text.x = element_text(size = 9, angle = 45, hjust = 1))
+participant_summary <- sortedData %>%
+  mutate(
+    visit_month = floor_date(as.Date(date_visit_201fb3), "month")  # Menggunakan date_visit_201fb3 sebagai acuan dan mengganti nama kolom
+  ) %>%
+  filter(!is.na(visit_month)) %>%
+  count(visit_month) %>%
+  complete(
+    visit_month = seq.Date(min(visit_month), max(visit_month), by = "month"),
+    fill = list(n = 0)
+  )
+
+# Hitung total peserta
+total_participants <- sum(participant_summary$n, na.rm = TRUE)
+
+# Plot
+ggplot(participant_summary, aes(x = visit_month, y = n)) +
+  geom_point(size = 2, color = "black") +   # Menambahkan warna merah pada titik
+  geom_line(color = "red") +             # Menambahkan warna biru pada garis
+  geom_text(aes(label = ifelse(n > 0, as.character(n), "")), vjust = -1, size = 4, color = "black") +
+  scale_x_date(date_labels = "%d-%b", date_breaks = "1 month", expand = c(0, 2)) +
+  scale_y_continuous(limits = c(0, 70), breaks = seq(0, 70, by = 10), expand = c(0, 1)) +
+  geom_text(
+    aes(x = max(visit_month), y = 20, 
+        label = paste("Total recruited participants:", total_participants)),
+    vjust = -0.5, hjust = 1, size = 3.5, color = "black"
+  ) +
+  labs(title = "Total recruited participants", x = "Month", y = "N Participants") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 9, angle = 45, hjust = 1))
+
+```
+
+##  {background-image="background.jpg"}
+
+#### Consent Questions summary
+
+```{r}
+
+# sortedData %>%
+#   filter(redcap_event_name == "baseline_arm_1") %>%
+#   mutate(consent_status = case_when(
+#     consent_form_complete == 0 ~ "Incomplete",
+#     consent_form_complete == 1 ~ "Unverified",
+#     consent_form_complete == 2 ~ "Complete",
+#     TRUE ~ "Unknown"
+#   )) %>%
+#   count(consent_status) %>%
+#   mutate(prop = round(n / sum(n) * 100, 1)) %>%
+#   adorn_totals() %>%
+#   # row_colors <- rep(c("#F9F9F9","#EDEDED"), length.out = nrow(sortedData))
+#   flextable()
+#     #  bg(i = seq_len(nrow(sortedData)), bg = row_colors) %>%  # Alternating row colors
+#     # autofit()
+
+consent_status_table <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(consent_status = case_when(
+    consent_form_complete == 0 ~ "Incomplete",
+    consent_form_complete == 1 ~ "Unverified",
+    consent_form_complete == 2 ~ "Complete",
+    TRUE ~ "Unknown"
+  )) %>%
+  count(consent_status, name = "N") %>%
+  mutate(Percentage = round(N / sum(N) * 100, 1)) %>%
+  adorn_totals(name = "Total")
+
+# Step 2: Alternating row colors
+row_colors <- rep(c("#F9F9F9", "#EDEDED"), length.out = nrow(consent_status_table))
+
+# Step 3: Flextable dengan styling
+flextable(consent_status_table) %>%
+  set_header_labels(
+    consent_status = "Consent Status",
+    N = "N",
+    Percentage = "%"
+  ) %>%
+  set_caption("Consent Form Completion Status (Baseline)") %>%
+  bold(i = 1, part = "header") %>%
+  bg(i = 1, part = "header", bg = "#F0F0F0") %>%
+  bg(i = nrow(consent_status_table), part = "body", bg = "#CFCFCF") %>%  # Baris Total abu-abu
+  bg(i = seq_len(nrow(consent_status_table)), bg = row_colors) %>%
+  bold(i = nrow(consent_status_table), part = "body") %>%
+  align(j = 2:3, align = "center", part = "all") %>%
+  autofit()
+
+consent_q <- sortedData %>%
+  select(record_id, matches("^q[1-8]_consent"))
+
+# Step 2: Pivot ke format long
+consent_long <- consent_q %>%
+  pivot_longer(
+    cols = -record_id,
+    names_to = "question",
+    values_to = "response"
+  )
+
+# Step 3: Hitung jumlah per respons
+table_consent <- consent_long %>%
+  mutate(response = case_when(
+    response == 1 ~ "Sim",
+    response == 2 ~ "Lae",
+    is.na(response) ~ "NA_res"
+  )) %>%
+  group_by(question, response) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = response,
+    values_from = count,
+    values_fill = 0
+  ) %>%
+  mutate(
+    Total = Sim + Lae
+  ) %>%
+  select(Consent_Question = question, Sim, Lae, Total) %>%
+  adorn_totals(name = "Total")  # Baris total
+
+# Step 4: Flextable dengan styling
+row_colors <- rep(c("#F9F9F9", "#EDEDED"), length.out = nrow(table_consent))
+
+flextable(table_consent) %>%
+  set_caption("Summary of Consent Responses (Q1 - Q8)") %>%
+  bold(i = 1, part = "header") %>%
+  bg(i = 1, part = "header", bg = "#F0F0F0") %>%
+  bg(i = nrow(table_consent), part = "body", bg = "#CFCFCF") %>%  # Baris Total abu-abu
+  bg(i = seq_len(nrow(table_consent)), bg = row_colors) %>%
+  bold(i = nrow(table_consent), part = "body") %>%
+  align(j = 2:4, align = "center", part = "all") %>%
+  autofit()
+####################
+# consent_q <- sortedData %>%
+#   select(record_id, starts_with("q")) %>%
+#   select(record_id, matches("^q[1-8]_consent"))  # ambil hanya q1 - q8
+# 
+# # Ubah ke format long agar mudah dihitung
+# consent_long <- consent_q %>%
+#   pivot_longer(
+#     cols = -record_id,
+#     names_to = "question",
+#     values_to = "response"
+#   )
+# # Hitung jumlah Sim dan Lae (dan NA_res, tapi tidak ditampilkan)
+# consent_summary <- consent_long %>%
+#   mutate(response = case_when(
+#     response == 1 ~ "Sim",
+#     response == 2 ~ "Lae",
+#     is.na(response) ~ "NA_res"
+#   )) %>%
+#   group_by(question, response) %>%
+#   summarise(count = n(), .groups = "drop") %>%
+#   pivot_wider(
+#     names_from = response,
+#     values_from = count,
+#     values_fill = 0
+#   ) %>%
+#   mutate(Total = rowSums(across(c("Sim", "Lae")), na.rm = TRUE))
+# 
+# # Flextable: sembunyikan kolom NA_res
+# consent_summary %>%
+#   rename(Consent_Question = question) %>%
+#   select(Consent_Question, Sim, Lae, Total) %>%  # hanya tampilkan kolom ini
+#   flextable() %>%
+#   bg(part = 'body', bg = 'gray95') %>%
+#   bold(i = 1, part = "header")
+
+
+
+fields_to_check <- c(
+  "consent_date", "consent_name", "consent_signature",
+  "initialresearchteam", "researchteamsignature", "consent_date_2")
+# Filter data berdasarkan redcap_event_name == "baseline_arm_1" dan hitung jumlah data
+consent_details <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  summarise(across(
+    all_of(fields_to_check),
+    ~ sum(!is.na(.)),
+    .names = "{.col}"
+  )) %>%
+  pivot_longer(cols = everything(), names_to = "Field", values_to = "N") %>%
+  mutate(Field = case_when(
+    Field == "consent_date" ~ "Consent Date",
+    Field == "consent_name" ~ "Consent Name",
+    Field == "consent_signature" ~ "Consent Signature",
+    Field == "initialresearchteam" ~ "Initial Research Team",
+    Field == "researchteamsignature" ~ "Research Team Signature",
+    Field == "consent_date_2" ~ "Consent Date 2",
+    TRUE ~ Field
+  ))
+# Ubah data supaya Field menjadi kolom dan N menjadi baris
+consent_details_wide <- consent_details %>%
+  pivot_wider(names_from = Field, values_from = N, values_fill = list(N = 0))
+# Tampilkan dengan flextable
+consent_details_wide %>%
+  flextable() %>%
+  bg(part = "body", bg = "gray95") %>%
+  bold(i = 1, part = "header")
+
+# 
+# fields_to_check <- c(
+#   "consent_date", "consent_name", "consent_signature",
+#   "initialresearchteam", "researchteamsignature", "consent_date_2"
+# )
+# 
+# # Filter data berdasarkan redcap_event_name == "baseline_arm_1" dan hitung jumlah data
+# consent_details <- sortedData %>%
+#   filter(redcap_event_name == "baseline_arm_1") %>%
+#   summarise(across(
+#     all_of(fields_to_check),
+#     ~ sum(!is.na(.)),
+#     .names = "{.col}"
+#   )) %>%
+#   pivot_longer(cols = everything(), names_to = "Field", values_to = "N") %>%
+#   mutate(Field = case_when(
+#     Field == "consent_date" ~ "Consent Date",
+#     Field == "consent_name" ~ "Consent Name",
+#     Field == "consent_signature" ~ "Consent Signature",
+#     Field == "initialresearchteam" ~ "Initial Research Team",
+#     Field == "researchteamsignature" ~ "Research Team Signature",
+#     Field == "consent_date_2" ~ "Consent Date 2",
+#     TRUE ~ Field
+#   ))
+# 
+# # Tampilkan dengan flextable
+# consent_details %>%
+#   flextable() %>%
+#   bg(part = "body", bg = "gray95") %>%
+#   bold(i = 1, part = "header")
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Total Enrolled Participants by Gender
+
+```{r}
+gender_summary <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(Gender = case_when(
+    sex == 1 ~ "Female",
+    sex == 2 ~ "Male",
+    TRUE ~ "NA"
+  )) %>%
+  count(Gender) %>%
+  mutate(Percent = round(n / sum(n) * 100, 1))
+
+# Plot grafik batang
+ggplot(gender_summary, aes(x = Gender, y = n, fill = Gender)) +
+  geom_col(width = 0.4) +
+  geom_text(aes(label = paste0(n, " (", Percent, "%)")), vjust = -0.5, size = 3.5) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "",
+    x = "Gender",
+    y = "N_Participants"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+# sortedData %>%
+#   filter(redcap_event_name == "baseline_arm_1") %>%
+#   mutate(Gender = case_when(
+#     sex == 1 ~ "Female",
+#     sex == 2 ~ "Male",
+#     TRUE ~ "Others"
+#   )) %>%
+#   count(Gender) %>%
+#   mutate(prop = round(n / sum(n) * 100, 1)) %>%
+#   adorn_totals() %>%
+#   flextable()
+```
+
+##  {background-image="background.jpg"}
+
+##### Monthly Enrolment by Gender
+
+```{r}
+
+sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(
+    Gender = case_when(
+      sex == 1 ~ "Female",
+      sex == 2 ~ "Male",
+      TRUE ~ "NA"
+    ),
+    visit_month = floor_date(as.Date(date_visit_201fb3), unit = "month")
+  ) %>%
+  filter(!is.na(visit_month)) %>%
+  count(visit_month, Gender) %>%
+  
+  ggplot(aes(x = visit_month, y = n, fill = Gender)) +
+  geom_col(position = "dodge") +
+  geom_text(aes(label = n), 
+            position = position_dodge(width = 30), 
+            vjust = -0.3, size = 3) +
+  labs(
+    title = "", x = "Months",y = "N Participants", fill = "Gender"
+  ) +
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Enrolment by Municipality with Coordinate-based Monitoring
+
+```{r}
+n_municipality <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(Municipality = case_when(
+    municipality == 1 ~ "Ainaro",
+    municipality == 2 ~ "Dili",
+    municipality == 3 ~ "Ermera",
+    TRUE ~ "Unknown"
+  )) %>%
+  count(Municipality) %>%
+  mutate(prop = round(n / sum(n) * 100, 1)) %>%
+  adorn_totals()
+
+# Buat flextable
+flextable(n_municipality) %>%
+  theme_vanilla() %>%
+  bg(j = "Municipality", bg = "#F0F0F0") %>%
+  align(j = 2:3, align = "center", part = "all") %>% 
+  autofit()
+
+Cordinate_summary <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(Municipality = case_when(
+    municipality == 1 ~ "Ainaro",
+    municipality == 2 ~ "Dili",
+    municipality == 3 ~ "Ermera",
+    TRUE ~ "Unknown"
+  )) %>%
+  group_by(Municipality) %>%
+  summarise(
+    N = n(),
+    N_latitude = sum(!is.na(latitude)),
+    missing_latitude = N - N_latitude,
+    N_longitude = sum(!is.na(longitude)),
+    missing_longitude = N - N_longitude,
+    .groups = "drop"
+  ) %>%
+  adorn_totals(name = "Total")
+
+# Buat flextable dengan header tambahan dan caption
+flextable(Cordinate_summary) %>%
+  set_caption("Table 1. Coordinate Data Completeness by Municipality") %>%
+  add_header_row(values = c("Data Completeness","","","","",""),
+                 colwidths = c(1, 1, 1, 1, 1, 1)) %>%
+  add_header_row(values = c("", "", "", "", "", "")) %>%
+  theme_vanilla() %>%
+  bg(j = "missing_latitude", bg = "#FFEAEB") %>%
+  bg(j = "missing_longitude", bg = "#FFEAEB") %>%
+  bg(j = "N", bg = "#F0F0F0") %>%
+  bg(j = "Municipality", bg = "#F0F0F0") %>%
+  align(j = 2:6, align = "center", part = "all") %>% 
+  autofit()
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Enrolment by Place of Birth and Delivery Assistance Type
+
+<!-- ::: {.columns} -->
+
+<!-- ::: {.column width="60%"} -->
+
+```{r}
+
+table_POB <- sortedData %>%
+filter(redcap_event_name == "baseline_arm_1") %>%
+mutate(
+  place_of_birth = factor(place_of_birth, levels = c(1, 2, 3, 4), 
+                          labels = c("Home", "Clinic", "HNGV", "HR"))
+) %>%
+tabyl(place_of_birth) %>%
+adorn_totals("row") %>%
+adorn_pct_formatting(digit = 0)  # Format persentase tanpa desimal
+row_colors <- rep(c("#F9F9F9","#EDEDED"), length.out = nrow(table_POB))
+
+# Step 2: Konversi ke Flextable dengan styling
+flextable(table_POB) %>%
+set_header_labels(place_of_birth = "Place of Birth", n = "N") %>%
+set_caption("Distribution by Place of Birth") %>%
+bold(i = 1, part = "header") %>%
+bg(i = 1, part = "header", bg = "#F0F0F0") %>%
+bg(i = nrow(table_POB), part = "body", bg = "#CFCFCF") %>%  #abu-abu baris Total
+bg(i = seq_len(nrow(table_POB)), bg = row_colors) %>%  # Alternating row colors
+bold(i = nrow(table_POB), part = "body") %>%  # Bold baris Total
+align(j = 2:3, align = "center", part = "all") %>% 
+autofit()
+
+
+# Step 1: Proses data dan ringkasan
+sortedData <- sortedData %>%
+mutate(
+  place_of_birth_label = case_when(
+    place_of_birth == 1 ~ "Home",
+    place_of_birth == 2 ~ "Clinic",
+    place_of_birth == 3 ~ "HNGV",
+    place_of_birth == 4 ~ "Referral Hospital"
+  ),
+  delivery_assist_label = case_when(
+    delivery_assist_type == 1 ~ "Assisted by HC",
+    delivery_assist_type == 2 ~ "Not assisted by HC")
+)
+
+# Step 2: Summary for home births (delivery assist)
+summary_home <- sortedData %>%
+filter(place_of_birth == 1) %>%
+count(place_of_birth_label, delivery_assist_label, name = "n") %>%
+group_by(place_of_birth_label) %>%
+mutate(
+  pct = round(n / sum(n) * 100, 1),
+  result = paste0(n, " (", pct, "%)")
+) %>%
+summarise(`Delivery Assistance (if Home)` = paste0(delivery_assist_label, ": ", result, collapse = "; "))
+
+# Step 3: Summary for facility births (HC professionals)
+summary_facility <- sortedData %>%
+filter(place_of_birth != 1) %>%
+pivot_longer(
+  cols = starts_with("home_hc_assisted___"),
+  names_to = "role",
+  values_to = "value"
+) %>%
+filter(value == 1) %>%
+mutate(role = case_when(
+  role == "home_hc_assisted___1" ~ "Doctor",
+  role == "home_hc_assisted___2" ~ "Midwife",
+  role == "home_hc_assisted___3" ~ "Nurse",
+  role == "home_hc_assisted___4" ~ "Public Health Officer",
+  role == "home_hc_assisted___5" ~ "Other"
+)) %>%
+count(place_of_birth_label, role, name = "n") %>%
+group_by(place_of_birth_label) %>%
+mutate(
+  pct = round(n / sum(n) * 100, 1),
+  result = paste0(n, " (", pct, "%)")
+) %>%
+summarise(`HC Professionals (if Facility)` = paste0(role, ": ", result, collapse = "; "))
+
+# Step 4: Combine summaries
+summary_all <- full_join(summary_home, summary_facility, by = "place_of_birth_label") %>%
+rename(`Place of Birth` = place_of_birth_label)
+
+# Step 5: Add alternating row colors
+row_colors <- rep(c("#F9F9F9","#EDEDED"), length.out = nrow(summary_all))
+
+# Step 6: Display using flextable with header color and alternating row colors
+flextable(summary_all) %>%
+set_caption("Summary of Delivery Assistance by Place of Birth") %>%
+bg(i = 1, part = "header", bg = "#F0F0F0") %>%  # Header color (light gray)
+bold(i = 1, part = "header") %>%  # Make header bold
+bg(i = seq_len(nrow(summary_all)), bg = row_colors) %>%  # Alternating row colors
+# align(j = 2:3, align = "center", part = "all") %>% 
+autofit()
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Participants Enrolled by Age(day) and Gender
+
+```{r}
+# filtered_age <- sortedData %>%
+#   filter(redcap_event_name == "baseline_arm_1") # Hitung statistik deskriptif untuk variabel age
+# summary_age <- filtered_age %>%
+#   summarise(
+#     n_total = n(),
+#     n_missing = sum(is.na(age)),
+#     n_valid = sum(!is.na(age))
+#   ) %>%
+#   bind_cols(
+#     filtered_age %>%
+#       select(age) %>%
+#       get_summary_stats(type = "common")
+#   ) %>%
+#   select(variable, everything())  # urutkan agar kolom 'variable' di awal
+# # Tampilkan dalam flextable
+# summary_age %>%
+#   flextable() %>%
+#   bg(part = 'body', bg = 'gray95') %>%
+#   bold(i = 1, part = "header")
+# 
+# 
+# plot_data_age_sex <- sortedData %>%
+#   filter(redcap_event_name == "baseline_arm_1", !is.na(age)) %>%
+#   mutate(
+#     age = as.numeric(as.character(age)),
+#     sex = case_when(
+#       sex == 1 ~ "Female",
+#       sex == 2 ~ "Male",
+#       TRUE ~ NA_character_
+#     ),
+#     `Participant Category` = "",
+#     sex = factor(sex, levels = c("Female", "Male"))
+#   )
+# 
+# # Buat plot
+# ggplot(plot_data_age_sex, aes(x = sex, y = age)) +
+#   geom_boxplot(outlier.shape = NA, fill = "#AED6F1", alpha = 0.7) +
+#   geom_jitter(width = 0.2, color = "#000000", alpha = 0.6) +
+#   facet_wrap(~ `Participant Category`) +
+#   labs(
+#     title = "",
+#     x = "Sex",
+#     y = "Age (day)"
+#   ) +
+#   scale_y_continuous(
+#     breaks = pretty,
+#     expand = c(0, 0)
+#   ) +
+#   theme_classic() +
+#   theme(
+#     plot.title = element_text(hjust = 0.5, face = "bold"),
+#     strip.text = element_text(face = "bold"),
+#     axis.title = element_text(face = "bold")
+#   )
+
+# 1. Hitung umur (dalam hari)
+Cr_age <- sortedData %>%
+  mutate(
+    dob = as.Date(dob),
+    date_visit_201fb3 = as.Date(date_visit_201fb3),
+    Age_new = as.numeric(interval(dob, date_visit_201fb3) %/% days(1))
+  )
+
+# 2. Statistik deskriptif
+# 2. Statistik deskriptif
+summary_age <- Cr_age %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  summarise(
+    n_total = n(),
+    n_missing = sum(is.na(Age_new)),
+    n_valid = sum(!is.na(Age_new))
+  ) %>%
+  bind_cols(
+    Cr_age %>%
+      filter(redcap_event_name == "baseline_arm_1") %>%
+      select(Age_new) %>%
+      get_summary_stats(type = "common") %>%
+      mutate(variable = "Age_new")
+  ) %>%
+  select(variable, n_total, n_missing, n_valid, everything())
+
+# 3. Tampilkan statistik
+summary_age %>%
+  flextable() %>%
+  bg(part = 'body', bg = 'gray95') %>%
+  bold(i = 1, part = "header")
+
+# 4. Siapkan data untuk plot
+plot_data_age_sex <- Cr_age %>%
+  filter(redcap_event_name == "baseline_arm_1", !is.na(Age_new)) %>%
+  mutate(
+    sex = case_when(
+      sex == 1 ~ "Female",
+      sex == 2 ~ "Male",
+      TRUE ~ NA_character_
+    ),
+    `Participant Category` = "",  # Bisa diisi jika ada
+    sex = factor(sex, levels = c("Female", "Male"))
+  )
+
+# 5. Buat plot
+ggplot(plot_data_age_sex, aes(x = sex, y = Age_new)) +
+  geom_boxplot(outlier.shape = NA, fill = "#AED6F1", alpha = 0.7) +
+  geom_jitter(width = 0.2, color = "#000000", alpha = 0.6) +
+  facet_wrap(~ `Participant Category`) +
+  labs(
+    title = "",
+    x = "Sex",
+    y = "Age (day)"
+  ) +
+  scale_y_continuous(
+    breaks = pretty,
+    expand = c(0, 0)
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    strip.text = element_text(face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Relationship Between Participants’ Age(day) and Baby’s Weight
+
+```{r}
+filtered_kg <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(childs_weight3 = as.numeric(childs_weight3)) 
+# filter(!is.na(childs_weight3))
+# Hitung statistik
+summary_weight <- filtered_kg %>%
+  summarise(
+    n_total = n(),
+    n_missing = sum(is.na(childs_weight3)),
+    n_valid = sum(!is.na(childs_weight3))
+  ) %>%
+  bind_cols(
+    filtered_kg %>%
+      select(childs_weight3) %>%
+      get_summary_stats(type = "common")
+  ) %>%
+  select(variable, everything())  # Pastikan kolom variable di awal
+# Tampilkan tabel rapi
+summary_weight %>%
+  flextable() %>%
+  bg(part = "body", bg = "gray95") %>%
+  bold(i = 1, part = "header") %>%
+  autofit()
+
+# plot_kg <- sortedData %>%
+#   filter(redcap_event_name == "baseline_arm_1") %>%
+#   mutate(
+#     childs_weight3 = as.numeric(as.character(childs_weight3)),
+#     age = as.numeric(as.character(Age_new)),
+#     `Weight (Kg)` = round(childs_weight3, 1),
+#     `Age (day)` = Age_new,
+#     `Participant Category` = ifelse(!is.na(record_id), "", NA)
+#   ) %>%
+#   filter(!is.na(`Weight (Kg)`), !is.na(`Age (day)`))
+# Memanggil Age_new yang sudah ada
+plot_kg <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(
+    childs_weight3 = as.numeric(as.character(childs_weight3)),
+    `Weight (Kg)` = round(childs_weight3, 1),
+    `Age (day)` = Age_new,  # Memanggil Age_new yang sudah dihitung
+    `Participant Category` = ifelse(!is.na(record_id), "", NA)
+  ) %>%
+  filter(!is.na(`Weight (Kg)`), !is.na(`Age (day)`))
+
+# Buat plot
+ggplot(plot_kg, aes(x = `Age (day)`, y = `Weight (Kg)`)) +
+  geom_point(size = 2, color = "#2c3e50") +
+  geom_smooth(method = "loess", se = FALSE, color = "blue") +
+  facet_wrap(~ `Participant Category`) +
+  labs(
+    title = "",
+    x = "Age (days)",
+    y = "Weight (Kg)"
+  ) +
+  theme_classic()
+
+# Siapkan data untuk plot
+# plot_kg <- sortedData %>%
+#   filter(redcap_event_name == "baseline_arm_1") %>%
+#   mutate(
+#     childs_weight3 = as.numeric(as.character(childs_weight3)),
+#     age = as.numeric(as.character(age)),
+#     `Weight (Kg)` = round(childs_weight3, 1),
+#     `Age (day)` = age,
+#     `Participant Category` = ifelse(!is.na(record_id), "", NA)
+#   ) %>%
+#   filter(!is.na(`Weight (Kg)`), !is.na(`Age (day)`))
+# 
+# # Buat plot
+# ggplot(plot_kg, aes(x = `Age (day)`, y = `Weight (Kg)`)) +
+#   geom_point(size = 2, color = "#2c3e50") +
+#   geom_smooth(method = "loess", se = FALSE, color = "blue") +
+#   facet_wrap(~ `Participant Category`) +
+#   labs(
+#     title = "",
+#     x = "Age (days)",
+#     y = "Weight (Kg)"
+#   ) +
+#   theme_classic()
+
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Relationship Between Participants’ Age(day) and Baby’s Height
+
+```{r}
+filteredData_H <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1")
+# Hitung statistik dan tambahkan kolom total, missing, dan valid
+summary_cm <- filteredData_H %>%
+  summarise(
+    n_total = n(),
+    n_missing = sum(is.na(childs_height3)),
+    n_valid = sum(!is.na(childs_height3))
+  ) %>%
+  bind_cols(
+    filteredData_H %>%
+      select(childs_height3) %>%
+      get_summary_stats()
+  ) %>%
+  select(variable, everything())  # urutkan kolom agar variable di awal
+# Tampilkan dengan flextable
+summary_cm %>%
+  flextable() %>%
+  bg(part = 'body', bg = 'gray95') %>%
+  bold(i = 1, bold = TRUE, part = "header")
+
+plot_dataHR <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%  # Filter ke baseline
+  mutate(
+    childs_height3 = as.numeric(as.character(childs_height3)),
+    Age_new = as.numeric(as.character(Age_new)),
+    `Height_(CM)` = round(childs_height3),
+    `Age (day)` = Age_new,
+    `Participant Category` = ifelse(!is.na(record_id), "Age VS Height", NA)
+  ) %>%
+  filter(!is.na(`Height_(CM)`), !is.na(`Age (day)`))
+
+# Buat plot
+ggplot(plot_dataHR, aes(x = `Age (day)`, y = `Height_(CM)`)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "loess", se = FALSE, color = "blue") +
+  facet_wrap(~ `Participant Category`) +
+  theme_classic()
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Relationship Between Participants’ Weight and Baby’s Height
+
+<!-- ::: {.columns} -->
+
+<!-- ::: {.column width="60%"} -->
+
+```{r}
+plot_data <- sortedData %>%
+mutate(
+  `Weight (Kg)` = round(as.numeric(childs_weight3), 1),
+  `Height (cm)` = as.numeric(childs_height3),
+  `Age (day)` = as.numeric(age),
+  `Participant Category` = ifelse(!is.na(record_id), "Baseline Weight VS Height of Baby", NA)
+) %>%
+filter(!is.na(`Weight (Kg)`), !is.na(`Height (cm)`))
+
+# Visualisasi
+ggplot(plot_data, aes(x = `Weight (Kg)`, y = `Height (cm)`)) +
+geom_point(size = 2) +
+geom_smooth(method = "loess", se = FALSE, color = "blue") +
+facet_wrap(~ `Participant Category`) +
+theme_classic()
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Relationship Between Participants’ Age(day) and Baby’s Head Circumference
+
+```{r}
+# 
+# # Filter ke baseline_arm_1 lalu hitung ringkasan statistik head_cont
+# sortedData %>%
+#   filter(redcap_event_name == "baseline_arm_1") %>%
+#   select(head_cont) %>%
+#   get_summary_stats() %>%
+#   flextable() %>%
+#   bg(part = 'body', bg = 'gray95') %>%
+#   bold(i = 1, bold = TRUE, part = "header")
+
+# Filter ke baseline_arm_1
+filteredData <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1")
+# Hitung statistik dan tambahkan kolom total, missing, dan valid
+summary_stats <- filteredData %>%
+  summarise(
+    n_total = n(),
+    n_missing = sum(is.na(head_cont)),
+    n_valid = sum(!is.na(head_cont))
+  ) %>%
+  bind_cols(
+    filteredData %>%
+      select(head_cont) %>%
+      get_summary_stats()
+  ) %>%
+  select(variable, everything())  # urutkan kolom agar variable di awal
+# Tampilkan dengan flextable
+summary_stats %>%
+  flextable() %>%
+  bg(part = 'body', bg = 'gray95') %>%
+  bold(i = 1, bold = TRUE, part = "header")
+
+
+plot_dataHR <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%  # Filter ke baseline
+  mutate(
+    head_cont = as.numeric(as.character(head_cont)),
+    Age_new = as.numeric(as.character(Age_new)),
+    `Head_Circumference` = round(head_cont),
+    `Age (day)` = Age_new,
+    `Participant Category` = ifelse(!is.na(record_id), "Age(day) ~ Head Circumference of Baby", NA)
+  ) %>%
+  filter(!is.na(`Head_Circumference`), !is.na(`Age (day)`))
+
+# Buat plot
+ggplot(plot_dataHR, aes(x = `Age (day)`, y = `Head_Circumference`)) +
+  geom_point(size = 2) +
+  geom_smooth(method = "loess", se = FALSE, color = "blue") +
+  facet_wrap(~ `Participant Category`) +
+  theme_classic()
+
+```
+
+##  {background-image="background.jpg"}
+
+###### Relationship Between Mother’s Weight and Height
+
+<!-- ::: {.columns} -->
+
+<!-- ::: {.column width="60%"} -->
+
+```{r}
+filteredData_H_M <- sortedData %>%
+filter(redcap_event_name == "baseline_arm_1")
+# Hitung statistik dan tambahkan kolom total, missing, dan valid
+summary_cm <- filteredData_H_M %>%
+summarise(
+  n_total = n(),
+  n_missing = sum(is.na(mothers_height)),
+  n_valid = sum(!is.na(mothers_height))
+) %>%
+bind_cols(
+  filteredData_H_M %>%
+    select(mothers_height) %>%
+    get_summary_stats()
+) %>%
+select(variable, everything())  # urutkan kolom agar variable di awal
+# Tampilkan dengan flextable
+summary_cm %>%
+flextable() %>%
+bg(part = 'body', bg = 'gray95') %>%
+bold(i = 1, bold = TRUE, part = "header")
+
+
+filteredData_K_M <- sortedData %>%
+filter(redcap_event_name == "baseline_arm_1")
+# Hitung statistik dan tambahkan kolom total, missing, dan valid
+summary_cm <- filteredData_K_M %>%
+summarise(
+  n_total = n(),
+  n_missing = sum(is.na(mothers_weight)),
+  n_valid = sum(!is.na(mothers_weight))
+) %>%
+bind_cols(
+  filteredData_K_M %>%
+    select(mothers_weight) %>%
+    get_summary_stats()
+) %>%
+select(variable, everything())  # urutkan kolom agar variable di awal
+# Tampilkan dengan flextable
+summary_cm %>%
+flextable() %>%
+bg(part = 'body', bg = 'gray95') %>%
+bold(i = 1, bold = TRUE, part = "header")
+
+
+plot_data_GH_M <- sortedData %>%
+mutate(
+  `Weight (Kg)` = round(as.numeric(mothers_weight), 1),
+  `Height (cm)` = as.numeric(mothers_height),
+  `Age (day)` = as.numeric(age),
+  `Participant Category` = ifelse(!is.na(record_id), "Baseline Weight VS Height of Mother", NA)
+) %>%
+filter(!is.na(`Weight (Kg)`), !is.na(`Height (cm)`))
+
+# Visualisasi
+ggplot(plot_data_GH_M, aes(x = `Weight (Kg)`, y = `Height (cm)`)) +
+geom_point(size = 2) +
+geom_smooth(method = "loess", se = FALSE, color = "blue") +
+facet_wrap(~ `Participant Category`) +
+theme_classic()
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Count of Antibiotic Usages and Antibiotic Name Availability
+
+```{r}
+# # Step 1: Buat urutan kategori sebagai faktor
+# all_categories_abx <- tibble(
+#   Antibiotic_Taken = factor(c("Yes", "No", "NA"), levels = c("Yes", "No", "NA"))
+# )
+# 
+# # Step 2: Proses data utama
+# abx_summary <- sortedData %>%
+#   filter(redcap_event_name == "baseline_arm_1") %>%
+#   mutate(
+#     Antibiotic_Taken = case_when(
+#       abx_taken == 1 ~ "Yes",
+#       abx_taken == 2 ~ "No",
+#       TRUE ~ "NA"
+#     ),
+#     abx_names_present = ifelse(abx_taken == 1 & !is.na(abx_names) & abx_names != "", 1, 0),
+#     Antibiotic_Taken = factor(Antibiotic_Taken, levels = c("Yes", "No", "NA"))
+#   ) %>%
+#   group_by(Antibiotic_Taken) %>%
+#   summarise(
+#     N = n(),
+#     N_Abx_taken_Names = sum(abx_names_present),
+#     .groups = "drop"
+#   ) %>%
+#   right_join(all_categories_abx, by = "Antibiotic_Taken") %>%
+#   replace_na(list(N = 0, N_Abx_taken_Names = 0)) %>%
+#   arrange(Antibiotic_Taken)  # urutkan sesuai faktor
+# 
+# # Step 3: Tambahkan baris total
+# abx_summary_total <- abx_summary %>%
+#   summarise(
+#     Antibiotic_Taken = "Total",
+#     N = sum(N),
+#     N_Abx_taken_Names = sum(N_Abx_taken_Names)
+#   )
+# 
+# abx_summary_final <- bind_rows(abx_summary, abx_summary_total)
+# # Step 4: Buat Flextable dengan style seperti sebelumnya
+# flextable(abx_summary_final) %>%
+#   set_caption("Antibiotic Use & Named Antibiotics (Baseline)") %>%
+#   add_header_row(
+#     values = c("Data Check", ""),
+#     colwidths = c(1, 2)
+#   ) %>%
+#   bold(i = 1, part = "header") %>%
+#   bg(i = 1, part = "header", bg = "#F0F0F0") %>%
+#   bg(i = nrow(abx_summary_final), bg = "#F0F0F0") %>%
+#   bold(i = nrow(abx_summary_final)) %>%
+#   merge_h(part = "header") %>%
+#   align(align = "center", part = "all") %>%
+#   autofit()
+
+
+# Step 1: Siapkan variabel untuk faktor
+all_categories_abx <- tibble(
+  Antibiotic_Taken = factor(c("Yes", "No", "NA"), levels = c("Yes", "No", "NA"))
+)
+
+# Step 2: Proses dan ringkas data
+table_abx <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(
+    Antibiotic_Taken = case_when(
+      abx_taken == 1 ~ "Yes",
+      abx_taken == 2 ~ "No",
+      TRUE ~ "NA"
+    ),
+    abx_names_present = ifelse(abx_taken == 1 & !is.na(abx_names) & abx_names != "", 1, 0),
+    Antibiotic_Taken = factor(Antibiotic_Taken, levels = c("Yes", "No", "NA"))
+  ) %>%
+  group_by(Antibiotic_Taken) %>%
+  summarise(
+    N = n(),
+    N_Abx_taken_Names = sum(abx_names_present),
+    .groups = "drop"
+  ) %>%
+  right_join(all_categories_abx, by = "Antibiotic_Taken") %>%
+  replace_na(list(N = 0, N_Abx_taken_Names = 0)) %>%
+  arrange(Antibiotic_Taken)
+
+# Step 3: Tambah baris Total
+table_abx <- table_abx %>%
+  adorn_totals(name = "Total")  # dari janitor
+
+# Step 4: Flextable styling
+row_colors <- rep(c("#F9F9F9", "#EDEDED"), length.out = nrow(table_abx))
+
+flextable(table_abx) %>%
+  set_header_labels(
+    Antibiotic_Taken = "Antibiotic Taken",
+    N = "N",
+    N_Abx_taken_Names = "N Named"
+  ) %>%
+  set_caption("Antibiotic Use & Named Antibiotics (Baseline)") %>%
+  bold(i = 1, part = "header") %>%
+  bg(i = 1, part = "header", bg = "#F0F0F0") %>%
+  bg(i = nrow(table_abx), part = "body", bg = "#CFCFCF") %>%
+  bg(i = seq_len(nrow(table_abx)), bg = row_colors) %>%
+  bold(i = nrow(table_abx), part = "body") %>%
+  align(j = 2:3, align = "center", part = "all") %>%
+  autofit()
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Relationship to Baby by Primary Caregiver Status + Caregiver Interview Info
+
+```{r}
+# Step 1: Preprocess data
+data_RC <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(
+    primary_caregiver = case_when(
+      primary_caregiver == 1 ~ "Caregiver_Yes",
+      primary_caregiver == 0 ~ "Caregiver_No",
+      TRUE ~ NA_character_
+    ),
+    relationship = factor(
+      case_when(
+        relationship3 == 1 ~ "Inan (Mother)", relationship3 == 2 ~ "Aman (Father)",
+        relationship3 == 3 ~ "Maun (Brother)", relationship3 == 4 ~ "Bin (Sister)",
+        relationship3 == 5 ~ "Avó-Feto (Grandmother)", relationship3 == 6 ~ "Avó-Mane (Grandfather)",
+        relationship3 == 7 ~ "Seluk (Other)", TRUE ~ "Missing"
+      ),
+      levels = c(
+        "Inan (Mother)", "Aman (Father)", "Maun (Brother)",
+        "Bin (Sister)", "Avó-Feto (Grandmother)",
+        "Avó-Mane (Grandfather)", "Seluk (Other)", "Missing"
+      )
+    )
+  )
+
+# Step 2: Crosstab dengan kolom total
+tab <- data_RC %>%
+  tabyl(relationship, primary_caregiver, show_na = FALSE) %>%
+  adorn_totals("col")
+
+# Step 3: Hitung interviewed & missing
+tab_interviewed <- data_RC %>%
+  filter(!is.na(caregiver_interviewed3) & caregiver_interviewed3 != "") %>%
+  count(relationship, name = "Caregiver_Interviewed")
+
+tab_missing <- data_RC %>%
+  filter(is.na(caregiver_interviewed3) | caregiver_interviewed3 == "") %>%
+  count(relationship, name = "Caregiver_Interviewed_Missing")
+
+# Step 4: Gabungkan
+tab <- tab %>%
+  left_join(tab_interviewed, by = "relationship") %>%
+  left_join(tab_missing, by = "relationship") %>%
+  mutate(
+    Caregiver_Interviewed = replace_na(Caregiver_Interviewed, 0),
+    Caregiver_Interviewed_Missing = replace_na(Caregiver_Interviewed_Missing, 0)
+  )
+
+# Step 5: Tambahkan baris total semua kolom
+tab_total <- tab %>%
+  summarise(
+    relationship = "Total",
+    Caregiver_Yes = sum(Caregiver_Yes, na.rm = TRUE),
+    Caregiver_No = sum(Caregiver_No, na.rm = TRUE),
+    Total = sum(Total, na.rm = TRUE),
+    Caregiver_Interviewed = sum(Caregiver_Interviewed, na.rm = TRUE),
+    Caregiver_Interviewed_Missing = sum(Caregiver_Interviewed_Missing, na.rm = TRUE)
+  )
+
+tab <- bind_rows(tab, tab_total)
+
+# Step 6: Flextable dengan header dan warna
+ft1 <- flextable(tab) %>%
+  set_caption("Relationship to Baby by Primary Caregiver Status (Baseline) + Caregiver Interview Info") %>%
+  add_header_row(
+    values = c(" ", "Primary Caregiver Status", "Caregiver Interview Info"),
+    colwidths = c(1, 3, 2)
+  ) %>%
+  bg(j = "Caregiver_Interviewed", bg = "#d4edda") %>%  # light green
+  bg(j = "Caregiver_Interviewed_Missing", bg = "#f8d7da") %>%  # light red/pink
+  bg(i = 1, bg = "#F0F0F0") %>%  # Header row color
+  bg(i = nrow(tab), bg = "#F0F0F0") %>%  # Total row color
+  bold(i = ~ relationship == "Total", bold = TRUE) %>%
+  merge_h(part = "header") %>%
+  # align(align = "center", part = "all") %>%
+  align(j = 2:6, align = "center", part = "all") %>%
+  autofit()
+ft1
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Live Births vs Available Sibling Interval Data per Mother (with Missing Data)
+
+```{r}
+
+# Step 1: Preprocess data
+data_howlong <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(
+    many_live = factor(case_when(
+      many_live == 1 ~ "1",
+      many_live == 2 ~ "2",
+      many_live == 3 ~ "3",
+      many_live == 4 ~ "4",
+      many_live == 5 ~ "5",
+      many_live == 6 ~ "6",
+      many_live == 7 ~ "7",
+      many_live == 8 ~ "8",
+      many_live == 9 ~ "9 or more",
+      TRUE ~ "Missing"
+    ), levels = c("1","2","3","4","5","6","7","8","9 or more","Missing"))
+  ) %>%
+  group_by(many_live) %>%
+  summarise(
+    `Total Respondents` = n(),
+    `Average Time to Closest Sibling` = round(mean(how_long, na.rm = TRUE), 1),
+    `How Long - Available` = sum(!is.na(how_long)),
+    `How Long - Missing` = sum(is.na(how_long)),
+    
+    .groups = "drop"
+  ) %>%
+  adorn_totals(name = "Total")
+
+# Step 2: Create flextable
+flextable(data_howlong) %>%
+  set_caption("Live Births vs Available Sibling Interval Data per Mother(with Missing Data)") %>%
+  bg(j = "How Long - Missing", bg = "#f8d7da") %>%  # light red
+  bg(j = "Average Time to Closest Sibling", bg = "#d1ecf1") %>%  # light blue
+  bg(i = nrow(data_howlong), bg = "#F0F0F0") %>%  # grey for total row
+  bold(i = ~ many_live == "Total", bold = TRUE) %>%
+  align(align = "center", part = "all") %>%
+  autofit() %>%
+  bg(part = "header", bg = "#F0F0F0")  # grey for header background
+
+
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Parental Education Level Distribution
+
+```{r}
+# Step 1: Proses data untuk pendidikan ibu
+Mother_Education <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(
+    mother_education = as.numeric(mother_education),
+    mother_education = case_when(
+      mother_education == 1 ~ "No formal education",
+      mother_education == 2 ~ "Did not complete primary school",
+      mother_education == 3 ~ "Completed primary school",
+      mother_education == 4 ~ "Did not complete high school",
+      mother_education == 5 ~ "Completed high school",
+      mother_education == 6 ~ "College (and beyond)",
+      TRUE ~ "Unknown"
+    )
+  ) %>%
+  count(mother_education, name = "Mother_Freq") %>%
+  complete(mother_education = c(
+    "No formal education", "Did not complete primary school",
+    "Completed primary school", "Did not complete high school",
+    "Completed high school", "College (and beyond)"
+  ), fill = list(Mother_Freq = 0))
+
+# Step 2: Proses data untuk pendidikan ayah
+Father_Education <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(
+    father_edu = as.numeric(father_edu),
+    father_edu = case_when(
+      father_edu == 1 ~ "No formal education",
+      father_edu == 2 ~ "Did not complete primary school",
+      father_edu == 3 ~ "Completed primary school",
+      father_edu == 4 ~ "Did not complete high school",
+      father_edu == 5 ~ "Completed high school",
+      father_edu == 6 ~ "College (and beyond)",
+      TRUE ~ "Unknown"
+    )
+  ) %>%
+  count(father_edu, name = "Father_Freq") %>%
+  complete(father_edu = c(
+    "No formal education", "Did not complete primary school",
+    "Completed primary school", "Did not complete high school",
+    "Completed high school", "College (and beyond)"
+  ), fill = list(Father_Freq = 0))
+
+# Step 3: Gabungkan data pendidikan ibu dan ayah
+Education_Table <- left_join(Mother_Education, Father_Education,
+                             by = c("mother_education" = "father_edu")) %>%
+  rename(Education_Level = mother_education)
+
+# Step 4: Tambahkan kolom Total_Freq
+Education_Table <- Education_Table %>%
+  mutate(Total_Freq = Mother_Freq + Father_Freq)
+
+# Step 5: Tambahkan baris total keseluruhan
+Education_Table <- Education_Table %>%
+  bind_rows(summarise(., across(where(is.numeric), sum),
+                      Education_Level = "Total"))
+
+# Step 6: Flextable dengan warna pada caption dan total
+Education_Table %>%
+  flextable() %>%
+  set_caption("Parental Education Levels") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%  # grey header
+  bg(i = nrow(Education_Table), bg = "#F0F0F0") %>%  # grey for total row
+  bold(i = ~ Education_Level == "Total", bold = TRUE) %>%
+  # align(align = "left", part = "all") %>%
+  align(j = 2:4, align = "center", part = "all") %>%
+  autofit()
+
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Data Availability Check – Adults in Household & Employment
+
+```{r}
+# Step 1: Proses data dan buat summary
+household_summary_matrix <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  summarise(
+    `Adults in Household – Available` = sum(!is.na(no_adult_in_hh)),
+    `Adults in Household – Missing` = sum(is.na(no_adult_in_hh)),
+    `Adults Employed – Available` = sum(!is.na(no_adult_empyed)),
+    `Adults Employed – Missing` = sum(is.na(no_adult_empyed))
+  ) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Count") %>%
+  separate(Variable, into = c("Variable", "Status"), sep = " – ") %>%
+  pivot_wider(names_from = Status, values_from = Count) %>%
+  mutate(Total = Available + Missing)
+
+# Step 2: Tambahkan baris total
+household_summary_matrix <- household_summary_matrix %>%
+  adorn_totals(name = "Total", where = "row")
+
+# Step 3: Flextable styling dengan warna
+flextable(household_summary_matrix) %>%
+  set_caption("Availability Summary per Variable (Adults in Household & Employment)") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%  # warna abu-abu pada header
+  bg(i = nrow(household_summary_matrix), bg = "#F0F0F0") %>%  # warna abu-abu pada baris total
+  bold(i = ~ Variable == "Total", bold = TRUE) %>%
+  # align(align = "center", part = "all") %>%
+  align(j = 2:4, align = "center", part = "all") %>%
+  autofit()
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Breastfeeding Practices (Pratika fo susuben)
+
+```{r}
+
+# Step 1: Filter dan buat kategori
+summaryBF <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(
+    breastfed_cat = case_when(
+      breastfed == 1 ~ "Sim // Yes",
+      breastfed == 2 ~ "Lae // No",
+      breastfed == 3 ~ "Iha ema seluk ne'ebe fo susu ben ba bebe",
+      TRUE ~ "Missing"
+    ),
+    how_long_cat = case_when(
+      how_long_breast == 1 ~ "Immediately",
+      how_long_breast == 2 ~ "within hours",
+      how_long_breast == 3 ~ "within a days",
+      TRUE ~ "Missing"
+    )
+  )
+
+# Step 2: Tentukan urutan kategori
+row_levels <- c(
+  "Sim // Yes",
+  "Lae // No",
+  "Iha ema seluk ne'ebe fo susu ben ba bebe",
+  "Missing"
+)
+col_levels <- c("Immediately", "within hours", "within a days", "Missing")
+count_table <- summaryBF %>%
+  mutate(
+    breastfed_cat = factor(breastfed_cat, levels = row_levels),
+    how_long_cat = factor(how_long_cat, levels = col_levels)
+  ) %>%
+  count(breastfed_cat, how_long_cat, .drop = FALSE) %>%
+  complete(
+    breastfed_cat = factor(row_levels, levels = row_levels),
+    how_long_cat = factor(col_levels, levels = col_levels),
+    fill = list(n = 0)
+  )
+
+# Step 4: Buat final table dengan total baris dan kolom
+final_table <- count_table %>%
+  pivot_wider(
+    names_from = how_long_cat,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  mutate(
+    Total = rowSums(across(all_of(col_levels)))
+  ) %>%
+  bind_rows(
+    summarise(., across(where(is.numeric), sum), breastfed_cat = "Total")
+  )
+
+# Step 5: Tampilkan tabel dengan styling konsisten
+flextable(final_table) %>%
+  set_caption("Tabel Praktika Susu Ben (Breastfeeding Practices)") %>%
+  theme_box() %>%
+  autofit() %>%
+  bold(i = 1, part = "header") %>%
+  bg(i = 1, part = "header", bg = "#D3D3D3") %>%
+  bg(i = nrow(final_table), bg = "#F0F0F0") %>%
+  bold(i = nrow(final_table)) %>%
+  align(j = 2:6, align = "center", part = "all")
+
+
+############################################################################
+summary_alt <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1", breastfed == 1) %>%
+  mutate(
+    alt_drink_cat = case_when(
+      alternative_drink == 1 ~ "Yes",
+      alternative_drink == 0 ~ "No",
+      TRUE ~ "Missing"
+    ),
+    alt_other_cat = case_when(
+      alternative_drink == 1 & !is.na(alternative_drink_other) ~ "Yes",
+      alternative_drink == 1 & is.na(alternative_drink_other) ~ "Missing",
+      TRUE ~ NA_character_
+    ))
+
+# Ringkasan untuk alternative_drink
+alt_drink_summary <- summary_alt %>%
+  count(alt_drink_cat, name = "alternative_drink") %>%
+  complete(alt_drink_cat = c("Yes", "No", "Missing"), fill = list(alternative_drink = 0))
+
+# Ringkasan untuk alternative_drink_other
+alt_other_summary <- summary_alt %>%
+  filter(alternative_drink == 1) %>%
+  count(alt_other_cat, name = "alternative_drink_other") %>%
+  complete(alt_other_cat = c("Yes", "Missing"), fill = list(alternative_drink_other = 0)) %>%
+  rename(alt_drink_cat = alt_other_cat)
+
+# Gabungkan dan ubah ke bentuk final
+final_alt <- full_join(alt_drink_summary, alt_other_summary, by = "alt_drink_cat") %>%
+  replace_na(list(alternative_drink = 0, alternative_drink_other = 0)) %>%
+  rename(`Parameter` = alt_drink_cat)
+# Tambahkan baris Total
+final_alt <- bind_rows(
+  final_alt,
+  final_alt %>%
+    summarise(
+      Parameter = "Total",
+      alternative_drink = sum(alternative_drink),
+      alternative_drink_other = sum(alternative_drink_other)
+    ))
+# flextable(final_alt) %>%
+#   set_caption("Tabel Ringkasan Parameter: alternative_drink dan alternative_drink_other") %>%
+#   theme_box() %>%
+#   autofit()
+# Tampilkan flextable dengan desain konsisten
+flextable(final_alt) %>%
+  set_caption("Alternative Drink Usage and Additional Details (Data Summary)") %>%
+  theme_box() %>%
+  autofit() %>%
+  bold(i = 1, part = "header") %>%                          # Header ditebalkan
+  bg(i = 1, part = "header", bg = "#D3D3D3") %>%            # Header warna abu-abu
+  bg(i = nrow(final_alt), bg = "#F0F0F0") %>%               # Baris total warna abu-abu
+  bold(i = nrow(final_alt)) %>%                                 # Total ditebalkan
+  align(j = 2:3, align = "center", part = "all")
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Exclusively Breastfed (Data Check)
+
+```{r}
+
+# Step 1: Filter hanya baseline dan buat ringkasan
+table_Ex <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(
+    exclusively_cat = case_when(
+      exclusively_breastfed == 1 ~ "Yes",
+      exclusively_breastfed == 0 ~ "No",
+      TRUE ~ "Missing"
+    )) %>%
+  group_by(exclusively_cat) %>%
+  summarise(
+    Total = n(),
+    each_day_fed_time_filled = sum(!is.na(each_day_fed_time) & exclusively_breastfed == 1),
+    .groups = "drop"
+  )
+# Step 2: Tambahkan baris total keseluruhan
+summary_table_final <- table_Ex %>%
+  bind_rows(
+    tibble(
+      exclusively_cat = "Total",
+      Total = sum(table_Ex$Total),
+      each_day_fed_time_filled = sum(table_Ex$each_day_fed_time_filled)
+    ))
+
+# Step 3: Flextable dengan caption dan styling
+flextable(summary_table_final) %>%
+  set_caption("Exclusively Breastfed (Data Checking)") %>%
+  theme_box() %>%
+  autofit() %>%
+  bold(i = 1, part = "header") %>%
+  bg(i = 1, part = "header", bg = "#D3D3D3") %>%        # Warna abu-abu header
+  bg(i = nrow(summary_table_final), bg = "#F0F0F0") %>% # Warna abu-abu baris total
+  bold(i = nrow(summary_table_final)) %>%                    # Bold total
+  align(j = 2:3, align = "center", part = "all")
+```
+
+##  {background-image="background.jpg"}
+
+##### Main reason stopping breastfeeding (inclui Missing data )
+
+```{r}
+reason_data <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1")
+
+# Step 2: Panjang-kan alasan yang ditandai
+reason_long <- reason_data %>%
+  select(starts_with("reason___")) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "reason_code",
+    values_to = "selected"
+  ) %>%
+  filter(selected == 1) %>%
+  count(reason_code)
+
+# Step 3: Hitung missing (tidak ada satu pun alasan yang dipilih)
+missing_count <- reason_data %>%
+  mutate(missing = if_else(rowSums(across(starts_with("reason___")), na.rm = TRUE) == 0, 1, 0)) %>%
+  summarise(n = sum(missing)) %>%
+  mutate(
+    reason_code = "Missing",
+    Main_reason_stopping_breastfeeding = "Missing/breastfed_cat"
+  )
+
+# Step 4: Definisi label alasan
+reason_levels <- tibble(
+  reason_code = paste0("reason___", 1:7),
+  Main_reason_stopping_breastfeeding = c(
+    "Fornesimentu susubeen la sufisiente",
+    "Susar atu fo susu ka susu",
+    "Fila fali ba servisu ka iha komitmentu seluk",
+    "Problema saude husi bebé",
+    "Desizaun pesoál ka preferénsia",
+    "Moras ka la konfortavel (mastitis, infesaun, etc.)",
+    "Seluk"
+  )
+)
+
+# Step 5: Gabungkan dan tambahkan missing
+reason_summary <- reason_levels %>%
+  left_join(reason_long, by = "reason_code") %>%
+  mutate(n = replace_na(n, 0)) %>%
+  select(Main_reason_stopping_breastfeeding, n)
+
+final_summary <- bind_rows(reason_summary, missing_count %>% select(Main_reason_stopping_breastfeeding, n)) %>%
+  rename(Total = n)
+
+# Step 6: Tambahkan baris total keseluruhan
+final_summary_with_total <- final_summary %>%
+  bind_rows(
+    tibble(
+      Main_reason_stopping_breastfeeding = "Total",
+      Total = sum(final_summary$Total)
+    )
+  )
+
+# Step 7: Flextable dengan styling
+flextable(final_summary_with_total) %>%
+  set_caption("Main reason stopping breastfeeding (inclui Missing)") %>%
+  theme_box() %>%
+  autofit() %>%
+  bold(i = 1, part = "header") %>%
+  bg(i = 1, part = "header", bg = "#D3D3D3") %>%  # Header warna abu-abu
+  bg(i = nrow(final_summary_with_total), bg = "#F0F0F0") %>%  # Baris total
+  bold(i = nrow(final_summary_with_total)) %>%  # Bold untuk total
+  align(j = 2:2, align = "center", part = "all")
+
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Preparation for Breastfeeding (Including Missing Data)
+
+```{r}
+prep_data <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1")
+
+# Step 2: Ubah data menjadi format long
+prep_long <- prep_data %>%
+  pivot_longer(
+    cols = starts_with("breasfeed_prep___"),
+    names_to = "prep_code",
+    values_to = "checked"
+  ) %>%
+  filter(checked == 1) %>%
+  count(prep_code, name = "n")
+
+# Step 3: Hitung missing (tidak ada satu pun checkbox yang ditandai)
+missing_prep <- prep_data %>%
+  mutate(missing = if_else(rowSums(across(starts_with("breasfeed_prep___")), na.rm = TRUE) == 0, 1, 0)) %>%
+  summarise(n = sum(missing)) %>%
+  mutate(prep_code = "Missing", Preparation_for_breastfeeding = "Missing (La iha preparasaun ne'ebé markadu)")
+
+# Step 4: Buat daftar label untuk kode
+prep_levels <- tibble(
+  prep_code = paste0("breasfeed_prep___", 1:3),
+  Preparation_for_breastfeeding = c(
+    "Hemu be manas // Drink very hot water",
+    "Hamos susun matan // Clean the nipple",
+    "Bomba susu ben // Breast pump"
+  )
+)
+
+# Step 5: Gabungkan label dengan hasil count
+prep_summary <- prep_levels %>%
+  left_join(prep_long, by = "prep_code") %>%
+  mutate(n = replace_na(n, 0)) %>%
+  select(Preparation_for_breastfeeding, n)
+
+# Step 6: Gabungkan dengan Missing dan buat baris total
+final_summary_prep <- bind_rows(prep_summary, missing_prep %>% select(Preparation_for_breastfeeding, n)) %>%
+  rename(Total = n) %>%
+  bind_rows(
+    tibble(
+      Preparation_for_breastfeeding = "Total",
+      Total = sum(prep_summary$n, missing_prep$n)
+    )
+  )
+
+# Step 7: Tampilkan tabel dengan flextable
+flextable(final_summary_prep) %>%
+  set_caption("Preparation for Breastfeeding (inclui Missing)") %>%
+  theme_box() %>%
+  autofit() %>%
+  bold(i = 1, part = "header") %>%
+  bg(i = 1, part = "header", bg = "#D3D3D3") %>%
+  bg(i = nrow(final_summary_prep), bg = "#F0F0F0") %>%
+  bold(i = nrow(final_summary_prep)) %>% 
+  align(j = 2:2, align = "center", part = "all")
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Practices to Increase Milk Production (Including Missing Data)
+
+```{r}
+practice_data <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1")
+
+# Step 2: Pivot data menjadi format long
+practice_long <- practice_data %>%
+  pivot_longer(
+    cols = starts_with("breastfeed_prep_practice___"),
+    names_to = "practice_code",
+    values_to = "checked"
+  ) %>%
+  filter(checked == 1) %>%
+  count(practice_code, name = "n")
+
+# Step 3: Hitung Missing
+missing_practice <- practice_data %>%
+  mutate(missing = if_else(rowSums(across(starts_with("breastfeed_prep_practice___")), na.rm = TRUE) == 0, 1, 0)) %>%
+  summarise(n = sum(missing)) %>%
+  mutate(practice_code = "Missing", Practice_for_milk_production = "Missing (La iha pratika ne'ebé markadu)")
+
+# Step 4: Label tiap kode
+practice_levels <- tibble(
+  practice_code = paste0("breastfeed_prep_practice___", 1:5),
+  Practice_for_milk_production = c(
+    "Hemu tua // Take alcohol",
+    "Hemu be manas // Drink hot water",
+    "Tur besik ahi matan // Sit near the fire",
+    "Tuhik ho toalla manas // Beat with hot towels",
+    "Han hahan tradisional // Traditional foods"
+  )
+)
+
+# Step 5: Gabungkan label dan data
+practice_summary <- practice_levels %>%
+  left_join(practice_long, by = "practice_code") %>%
+  mutate(n = replace_na(n, 0)) %>%
+  select(Practice_for_milk_production, n)
+
+# Step 6: Tambah Missing dan Total
+final_summary_practice <- bind_rows(practice_summary, missing_practice %>% select(Practice_for_milk_production, n)) %>%
+  rename(Total = n) %>%
+  bind_rows(
+    tibble(
+      Practice_for_milk_production = "Total",
+      Total = sum(practice_summary$n, missing_practice$n)
+    )
+  )
+
+# Step 7: Tampilkan sebagai flextable
+flextable(final_summary_practice) %>%
+  set_caption("Practices to Increase Milk Production (inclui Missing)") %>%
+  theme_box() %>%
+  autofit() %>%
+  bold(i = 1, part = "header") %>%
+  bg(i = 1, part = "header", bg = "#D3D3D3") %>%
+  bg(i = nrow(final_summary_practice), bg = "#F0F0F0") %>%
+  bold(i = nrow(final_summary_practice)) %>% 
+  align(j = 2:2, align = "center", part = "all")
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Status of Enrolment Form Completion
+
+```{r}
+# Step 1: Filter data hanya dari baseline event
+form_status_data <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1")
+
+# Step 2: Buat kategori label
+form_status_label <- tibble(
+  enrolment_form_complete = c(0, 1, 2),
+  Form_Status = c("Incomplete", "Unverified", "Complete")
+)
+
+# Step 3: Hitung jumlah tiap kategori
+form_status_summary <- form_status_data %>%
+  group_by(enrolment_form_complete) %>%
+  summarise(Total = n(), .groups = "drop") %>%
+  left_join(form_status_label, by = "enrolment_form_complete") %>%
+  select(Form_Status, Total)
+
+# Step 4: Hitung jumlah missing
+# missing_form <- form_status_data %>%
+#   filter(is.na(enrolment_form_complete)) %>%
+#   summarise(Total = n()) %>%
+#   mutate(Form_Status = "Missing")
+
+# Step 5: Gabungkan semua dan total
+final_form_status <- bind_rows(form_status_summary) %>%
+  bind_rows(tibble(
+    Form_Status = "Total",
+    Total = sum(form_status_summary$Total)
+  ))
+
+# Step 6: Tampilkan sebagai flextable
+flextable(final_form_status) %>%
+  set_caption("Status of Enrolment Form Completion ") %>%
+  theme_box() %>%
+  autofit() %>%
+  bold(i = 1, part = "header") %>%
+  # bg(i = 0, bg = "#D3D3D3") %>%
+  bold(i = nrow(final_form_status)) %>%
+  bg(i = nrow(final_form_status), bg = "#F0F0F0") %>% 
+  align(j = 2:2, align = "center", part = "all")
+
+
+```
+
+##  {background-image="background.jpg"}
+
+#### Overview Distribuition of Participants (Basline and Follow-ups 1-6)
+
+```{r}
+event_list <- c(
+  "Baseline", "Follow-up 1", "Follow-up 2", "Follow-up 3",
+  "Follow-up 4", "Follow-up 5", "Follow-up 6"
+)
+
+gender_baseline <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(Gender = case_when(
+    sex == 1 ~ "Female",
+    sex == 2 ~ "Male",
+    TRUE ~ "NA"
+  )) %>%
+  select(record_id, Gender)
+
+summary_table <- sortedData %>%
+  left_join(gender_baseline, by = "record_id") %>%
+  mutate(
+    event_short = case_when(
+      redcap_event_name == "baseline_arm_1" ~ "Baseline",
+      redcap_event_name == "followup_1_3_month_arm_1" ~ "Follow-up 1",
+      redcap_event_name == "followup_2_6_month_arm_1" ~ "Follow-up 2",
+      redcap_event_name == "followup_3_9_month_arm_1" ~ "Follow-up 3",
+      redcap_event_name == "followup_4_12_month_arm_1" ~ "Follow-up 4",
+      redcap_event_name == "followup_5_18_month_arm_1" ~ "Follow-up 5",
+      redcap_event_name == "followup_6_23_month_arm_1" ~ "Follow-up 6",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  count(Gender, event_short, name = "Total") %>%
+  complete(Gender, event_short = factor(event_short, levels = event_list), fill = list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total) %>%
+  adorn_totals(where = "row", name = "Total")
+
+# Buat Flextable
+ft_summary_BF <- flextable(summary_table)
+
+# Alternating background warna
+n_cols <- ncol(summary_table)
+grid_colors <- rep(c("#ffffff", "#F0F0F0"), length.out = n_cols)
+for (j in seq_len(n_cols)) {
+  ft_summary_BF <- ft_summary_BF %>%
+    bg(j = j, bg = grid_colors[j], part = "body")
+}
+
+ft_summary_BF %>%
+  add_header_lines(values = "Table 1: Distribution of Participants by Gender: Baseline and   Follow-ups 1 to 6") %>%
+  bold(i = 1, part = "header") %>%
+  align(j = 2:ncol(summary_table), align = "center", part = "all") %>%
+  autofit()
+
+
+event_mapping <- tibble::tribble(
+  ~redcap_event_name,                  ~event_short,
+  "followup_1_3_month_arm_1",          "Follow-up 1",
+  "followup_2_6_month_arm_1",          "Follow-up 2",
+  "followup_3_9_month_arm_1",          "Follow-up 3",
+  "followup_4_12_month_arm_1",         "Follow-up 4",
+  "followup_5_18_month_arm_1",         "Follow-up 5",
+  "followup_6_23_month_arm_1",         "Follow-up 6"
+)
+
+# Ambil data dari semua event follow-up 1-6
+summary_continue <- sortedData %>%
+  inner_join(event_mapping, by = "redcap_event_name") %>%
+  mutate(
+    availability = case_when(
+      participant_availability_v1 == 1 ~ "Continue",
+      participant_availability_v1 == 2 ~ "No",
+      TRUE ~ NA_character_
+    )) %>%
+  filter(!is.na(availability)) %>%
+  count(availability, event_short, name = "Total") %>%
+  complete(event_short = c("Follow-up 1", "Follow-up 2", "Follow-up 3", "Follow-up 4",   "Follow-up 5", "Follow-up 6"),
+           availability = c("Continue", "No"), fill = list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total, values_fill = list(Total = 0)) %>%
+  adorn_totals(where = "row", name = "Total") 
+ft_summary <- flextable(summary_continue)
+n_cols <- ncol(summary_continue)
+grid_colors <- rep(c("#ffffff", "#F0F0F0"), length.out = n_cols)
+for (j in seq_len(n_cols)) {
+  ft_summary <- ft_summary %>% 
+    bg(j = j, bg = grid_colors[j], part = "body")
+}
+ft_summary %>%
+  add_header_lines(values = "Table 2: Continuation Status of Participants in the Study Period") %>%
+  bold(i = 1, part = "header") %>%
+  bold(i = ~ availability == "Total", bold = TRUE) %>%
+  align(j = 2:7, align = "center", part = "all") %>% 
+  autofit()
+# summary_continue %>%
+#   flextable() %>%
+#   autofit()
+
+summary_not_continue_rasion <- sortedData %>%
+  inner_join(event_mapping, by = "redcap_event_name") %>%
+  mutate(reason_NO = case_when(
+    participant_whereabout == 1 ~ "Move to another place(Can be reached)",
+    participant_whereabout == 2 ~ "Move to another place(Cannot be reached)",
+    participant_whereabout == 3 ~ "Decide to withdraw from the study",
+    participant_whereabout == 4 ~ "Died",
+    TRUE ~ NA_character_)) %>%
+  
+  filter(!is.na(reason_NO)) %>%
+  count(reason_NO, event_short, name = "Total") %>%
+  complete(event_short = c("Follow-up 1", "Follow-up 2", "Follow-up 3", "Follow-up 4", "Follow-up 5", "Follow-up 6"),
+           reason_NO = c("Move to another place(Can be reached)", "Move to another place(Cannot be reached)",
+                         "Decide to withdraw from the study","Died"), fill = list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total, values_fill = list(Total = 0)) %>% 
+  adorn_totals(where = "row", name = "Total")
+# Buat flextable
+ft_summary <- flextable(summary_not_continue_rasion)
+# Tentukan jumlah kolom
+n_cols <- ncol(summary_not_continue_rasion)
+# Buat vektor warna bergantian
+grid_colors <- rep(c("#ffffff", "#F0F0F0"), length.out = n_cols)
+# Terapkan warna latar belakang ke setiap kolom secara dinamis
+for (j in seq_len(n_cols)) {
+  ft_summary <- ft_summary %>% 
+    bg(j = j, bg = grid_colors[j], part = "body")
+}
+# Tampilkan flextable
+ft_summary %>%
+  bold(i = ~ reason_NO == "Total", bold = TRUE) %>%
+  add_header_lines(values = "Table 3: Reasons for Participants Not Continuing During the Study Period") %>%
+  bold(i = 1, part = "header") %>%
+  align(j = 2:7, align = "center", part = "all") %>% 
+  autofit()
+# Tampilkan tabel
+# summary_not_continue_rasion %>%
+#   flextable() %>%
+#   autofit()
+```
+
+##  {background-image="background.jpg"}
+
+##### Participant Distribution by Municipality: Baseline vs Follow-up
+
+```{r}
+
+# event_list <- c(
+#   "Baseline", "Follow-up 1", "Follow-up 2", "Follow-up 3",
+#   "Follow-up 4", "Follow-up 5", "Follow-up 6"
+# )
+# 
+# # Ambil municipality dari baseline
+# municipality_baseline <- sortedData %>%
+#   filter(redcap_event_name == "baseline_arm_1") %>%
+#   mutate(municipality1 = case_when(
+#     municipality == 1 ~ "Ainaro",
+#     municipality == 2 ~ "Dili",
+#     TRUE ~ "Ermera"
+#   )) %>%
+#   select(record_id, municipality1)
+# 
+# # Gabungkan dan buat summary table
+# summary_table <- sortedData %>%
+#   left_join(municipality_baseline, by = "record_id") %>%
+#   mutate(
+#     event_short = case_when(
+#       redcap_event_name == "baseline_arm_1" ~ "Baseline",
+#       redcap_event_name == "followup_1_3_month_arm_1" ~ "Follow-up 1",
+#       redcap_event_name == "followup_2_6_month_arm_1" ~ "Follow-up 2",
+#       redcap_event_name == "followup_3_9_month_arm_1" ~ "Follow-up 3",
+#       redcap_event_name == "followup_4_12_month_arm_1" ~ "Follow-up 4",
+#       redcap_event_name == "followup_5_18_month_arm_1" ~ "Follow-up 5",
+#       redcap_event_name == "followup_6_23_month_arm_1" ~ "Follow-up 6",
+#       TRUE ~ NA_character_
+#     )
+#   ) %>%
+#   count(municipality1, event_short, name = "Total") %>%
+#   complete(municipality1, event_short = event_list, fill = list(Total = 0)) %>%
+#   pivot_wider(names_from = event_short, values_from = Total) %>%
+#   mutate(
+#     `Follow-up 1 - Baseline` = `Follow-up 1` - Baseline,
+#     `Follow-up 2 - Baseline` = `Follow-up 2` - Baseline,
+#     `Follow-up 3 - Baseline` = `Follow-up 3` - Baseline,
+#     `Follow-up 4 - Baseline` = `Follow-up 4` - Baseline,
+#     `Follow-up 5 - Baseline` = `Follow-up 5` - Baseline,
+#     `Follow-up 6 - Baseline` = `Follow-up 6` - Baseline
+#   ) %>%
+#   adorn_totals(where = "row", name = "Total")
+# 
+# # Tampilkan tabel
+# summary_table %>%
+#   flextable() %>%
+#   set_caption("Difference between Baseline and Follow-up by Municipality") %>%
+#   set_header_labels(
+#     municipality1 = "Municipality",
+#     Baseline = "Baseline",
+#     `Follow-up 1` = "F1",
+#     `Follow-up 2` = "F2",
+#     `Follow-up 3` = "F3",
+#     `Follow-up 4` = "F4",
+#     `Follow-up 5` = "F5",
+#     `Follow-up 6` = "F6",
+#     `Follow-up 1 - Baseline` = "Δ F1",
+#     `Follow-up 2 - Baseline` = "Δ F2",
+#     `Follow-up 3 - Baseline` = "Δ F3",
+#     `Follow-up 4 - Baseline` = "Δ F4",
+#     `Follow-up 5 - Baseline` = "Δ F5",
+#     `Follow-up 6 - Baseline` = "Δ F6"
+#   ) %>%
+#     align(j = 2:14, align = "center", part = "all") %>% 
+#   autofit()
+
+event_list <- c(
+  "Baseline", "Follow-up 1", "Follow-up 2", "Follow-up 3",
+  "Follow-up 4", "Follow-up 5", "Follow-up 6"
+)
+
+# Step 2: Ambil municipality dari baseline
+municipality_baseline <- sortedData %>%
+  filter(redcap_event_name == "baseline_arm_1") %>%
+  mutate(municipality1 = case_when(
+    municipality == 1 ~ "Ainaro",
+    municipality == 2 ~ "Dili",
+    TRUE              ~ "Ermera"
+  )) %>%
+  select(record_id, municipality1)
+
+# Step 3: Gabungkan, transformasi, dan buat summary
+summary_table <- sortedData %>%
+  left_join(municipality_baseline, by = "record_id") %>%
+  mutate(event_short = case_when(
+    redcap_event_name == "baseline_arm_1"           ~ "Baseline",
+    redcap_event_name == "followup_1_3_month_arm_1" ~ "Follow-up 1",
+    redcap_event_name == "followup_2_6_month_arm_1" ~ "Follow-up 2",
+    redcap_event_name == "followup_3_9_month_arm_1" ~ "Follow-up 3",
+    redcap_event_name == "followup_4_12_month_arm_1"~ "Follow-up 4",
+    redcap_event_name == "followup_5_18_month_arm_1"~ "Follow-up 5",
+    redcap_event_name == "followup_6_23_month_arm_1"~ "Follow-up 6",
+    TRUE                                            ~ NA_character_
+  )) %>%
+  count(municipality1, event_short, name = "Total") %>%
+  complete(municipality1, event_short = event_list, fill = list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total) %>%
+  mutate(
+    `Follow-up 1 - Baseline` = `Follow-up 1` - Baseline,
+    `Follow-up 2 - Baseline` = `Follow-up 2` - Baseline,
+    `Follow-up 3 - Baseline` = `Follow-up 3` - Baseline,
+    `Follow-up 4 - Baseline` = `Follow-up 4` - Baseline,
+    `Follow-up 5 - Baseline` = `Follow-up 5` - Baseline,
+    `Follow-up 6 - Baseline` = `Follow-up 6` - Baseline
+  ) %>%
+  janitor::adorn_totals(where = "row", name = "Total")
+
+# Step 4: Alternating row colors
+row_colors <- rep(c("#F9F9F9", "#EDEDED"), length.out = nrow(summary_table))
+
+# Step 5: Tampilkan tabel dengan flextable
+summary_table %>%
+  flextable() %>%
+  set_caption("Difference between Baseline and Follow-up by Municipality") %>%
+  set_header_labels(
+    municipality1             = "Municipality",
+    Baseline                  = "Baseline",
+    `Follow-up 1`             = "F1",
+    `Follow-up 2`             = "F2",
+    `Follow-up 3`             = "F3",
+    `Follow-up 4`             = "F4",
+    `Follow-up 5`             = "F5",
+    `Follow-up 6`             = "F6",
+    `Follow-up 1 - Baseline`  = "Δ F1",
+    `Follow-up 2 - Baseline`  = "Δ F2",
+    `Follow-up 3 - Baseline`  = "Δ F3",
+    `Follow-up 4 - Baseline`  = "Δ F4",
+    `Follow-up 5 - Baseline`  = "Δ F5",
+    `Follow-up 6 - Baseline`  = "Δ F6"
+  ) %>%
+  bg(i = 1, part = "header", bg = "#F0F0F0") %>%
+  bg(i = seq_len(nrow(summary_table)), bg = row_colors) %>%
+  align(j = 2:14, align = "center", part = "all") %>%
+  autofit()
+
+```
+
+##  {background-image="background.jpg"}
+
+### Stool laboratory
+
+##### (collection and testing status)
+
+```{r}
+event_mapping1 <- tibble::tribble(
+  ~redcap_event_name,                  ~event_short,
+  "followup_1_3_month_arm_1",          "Follow-up 1",
+  "followup_2_6_month_arm_1",          "Follow-up 2",
+  "followup_3_9_month_arm_1",          "Follow-up 3",
+  "followup_4_12_month_arm_1",         "Follow-up 4",
+  "followup_5_18_month_arm_1",         "Follow-up 5",
+  "followup_6_23_month_arm_1",         "Follow-up 6"
+)
+# Proses data
+summary_stool_C <- sortedData %>%
+  inner_join(event_mapping1, by = "redcap_event_name") %>%
+  mutate(
+    Stool_Collected = case_when(
+      !is.na(col_date_stool) ~ "Yes",
+      is.na(col_date_stool) ~ "No"
+    )
+  ) %>%
+  count(Stool_Collected, event_short, name = "Total") %>%
+  complete(event_short = c("Follow-up 1", "Follow-up 2", "Follow-up 3", 
+                           "Follow-up 4", "Follow-up 5", "Follow-up 6"),
+           Stool_Collected = c("Yes", "No"), fill = list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total, values_fill = list(Total = 0)) %>%
+  adorn_totals(where = "row", name = "Total")
+
+# Buat flextable dengan warna abu-abu pada header dan baris total
+ft_summary_stool_C <- flextable(summary_stool_C)
+# Tentukan jumlah kolom
+n_cols <- ncol(summary_stool_C)
+# Buat vektor warna bergantian untuk baris
+grid_colors <- rep(c("#FFFFFF", "#F0F0F0"), length.out = n_cols)
+
+# Terapkan warna latar belakang ke setiap kolom secara dinamis
+for (j in seq_len(n_cols)) {
+  ft_summary_stool_C <- ft_summary_stool_C %>% 
+    bg(j = j, bg = grid_colors[j], part = "body")
+}
+# Tampilkan flextable dengan penyesuaian tambahan
+ft_summary_stool_C <- ft_summary_stool_C %>%
+  bg(part = "header", bg = "#F0F0F0") %>%  # Warna abu-abu untuk header
+  bold(part = "header") %>%
+  bold(i = ~ Stool_Collected == "Total", bold = TRUE) %>%
+  align(j = 2:7, align = "center", part = "all") %>% 
+  add_header_lines(values = "Table 1: Number of Stool collect") %>%
+  bold(i = 1, part = "header") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%
+  # bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  autofit()
+# Tampilkan tabel
+ft_summary_stool_C
+
+event_mapping2 <- tibble::tribble(
+  ~redcap_event_name,                  ~event_short,
+  "followup_1_3_month_arm_1",          "Follow-up 1",
+  "followup_2_6_month_arm_1",          "Follow-up 2",
+  "followup_3_9_month_arm_1",          "Follow-up 3",
+  "followup_4_12_month_arm_1",         "Follow-up 4",
+  "followup_5_18_month_arm_1",         "Follow-up 5",
+  "followup_6_23_month_arm_1",         "Follow-up 6"
+)
+# Ambil data dari semua event follow-up 1-6
+summary_pcr_c <- sortedData %>%
+  inner_join(event_mapping2, by = "redcap_event_name") %>%
+  mutate(
+    Stool_PCR_Completed = case_when(
+      pcr_completed_stool == 1 ~ "Yes",
+      pcr_completed_stool == 0 ~ "No",
+      TRUE ~ NA_character_
+    )) %>%
+  filter(!is.na(Stool_PCR_Completed)) %>%
+  count(Stool_PCR_Completed, event_short, name = "Total") %>%
+  complete(event_short = c("Follow-up 1", "Follow-up 2", "Follow-up 3", "Follow-up 4", "Follow-up 5", "Follow-up 6"),
+           Stool_PCR_Completed = c("Yes", "No"), fill = list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total, values_fill = list(Total = 0)) %>%
+  adorn_totals(where = "row", name = "Total") 
+
+# Buat flextable
+ft_summary <- flextable(summary_pcr_c) # Tentukan jumlah kolom
+n_cols <- ncol(summary_pcr_c) # Buat vektor warna bergantian
+grid_colors <- rep(c("#ffffff", "#F0F0F0"), length.out = n_cols)# Terapkan warna latar belakang ke setiap kolom secara dinamis
+for (j in seq_len(n_cols)) {
+  ft_summary <- ft_summary %>% 
+    bg(j = j, bg = grid_colors[j], part = "body") %>% 
+    align(j = 2:7, align = "center", part = "all")
+}
+# Tampilkan flextable
+ft_summary %>%
+  bold(i = ~ Stool_PCR_Completed == "Total", bold = TRUE) %>%
+  add_header_lines(values = "Table 2: Number of PCR Complete") %>%
+  bold(i = 1, part = "header") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%
+  # bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  autofit()
+
+
+event_mapping2 <- tibble::tribble(
+  ~redcap_event_name,                  ~event_short,
+  "followup_1_3_month_arm_1",          "Follow-up 1",
+  "followup_2_6_month_arm_1",          "Follow-up 2",
+  "followup_3_9_month_arm_1",          "Follow-up 3",
+  "followup_4_12_month_arm_1",         "Follow-up 4",
+  "followup_5_18_month_arm_1",         "Follow-up 5",
+  "followup_6_23_month_arm_1",         "Follow-up 6")
+# Ambil data dari semua event follow-up 1-6 dan hitung data berdasarkan 'why_v2_stool'
+summary_why_v2_stool <- sortedData %>%
+  inner_join(event_mapping2, by = "redcap_event_name") %>%
+  mutate(
+    Why_V2_Stool_Completed = case_when(
+      !is.na(why_v2_stool) ~ "N_Rasino_PCR_not_completed",   # Jika ada data, berarti ada (bukan NA)
+      TRUE ~ "Not_Available"                   # Jika NA, dianggap "No"
+    )) %>%
+  count(Why_V2_Stool_Completed, event_short, name = "Total") %>%
+  complete(event_short = c("Follow-up 1", "Follow-up 2", "Follow-up 3", "Follow-up 4", "Follow-up 5", "Follow-up 6"),
+           Why_V2_Stool_Completed = c("N_Rasino_PCR_not_completed", "Not_Available"), fill = list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total, values_fill = list(Total = 0)) %>%
+  adorn_totals(where = "row", name = "Total")
+
+# Buat flextable
+ft_summary_why_v2_stool <- flextable(summary_why_v2_stool) # Tentukan jumlah kolom
+n_cols_why_v2_stool <- ncol(summary_why_v2_stool) # Buat vektor warna bergantian
+grid_colors_why_v2_stool <- rep(c("#ffffff", "#F0F0F0"), length.out = n_cols_why_v2_stool) # Terapkan warna latar belakang ke setiap kolom secara dinamis
+
+# Terapkan warna dan pengaturan lainnya
+for (j in seq_len(n_cols_why_v2_stool)) {
+  ft_summary_why_v2_stool <- ft_summary_why_v2_stool %>% 
+    bg(j = j, bg = grid_colors_why_v2_stool[j], part = "body") %>% 
+    align(j = 2:7, align = "center", part = "all")}
+# Tampilkan flextable
+ft_summary_why_v2_stool %>%
+  add_header_lines(values = "Table 3: Number of Reason for Stool PCR Not Completed") %>%
+  bold(i = 1, part = "header") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%
+  # bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  autofit()
+
+```
+
+##  {background-image="background.jpg"}
+
+##### Stool Laboratory (PCR Result status by follow up)
+
+```{r}
+
+# Step 1: Mapping REDCap event ke nama ringkas
+event_mapping <- c(
+  "followup_1_3_month_arm_1"  = "Follow-up 1",
+  "followup_2_6_month_arm_1"  = "Follow-up 2",
+  "followup_3_9_month_arm_1"  = "Follow-up 3",
+  "followup_4_12_month_arm_1" = "Follow-up 4",
+  "followup_5_18_month_arm_1" = "Follow-up 5",
+  "followup_6_23_month_arm_1" = "Follow-up 6"
+)
+
+event_list <- unname(event_mapping)
+
+# Step 2: Daftar variabel dan label untuk hasil PCR
+pcr_vars <- c(
+  "pcr_results_v2_stool___1",  "pcr_results_v2_stool___2",  "pcr_results_v2_stool___3",
+  "pcr_results_v2_stool___4",  "pcr_results_v2_stool___5",  "pcr_results_v2_stool___7",
+  "pcr_results_v2_stool___8",  "pcr_results_v2_stool___9",  "pcr_results_v2_stool___11",
+  "pcr_results_v2_stool___12", "pcr_results_v2_stool___13", "pcr_results_v2_stool___14",
+  "pcr_results_v2_stool___15", "pcr_results_v2_stool___16", "pcr_results_v2_stool___17",
+  "pcr_results_v2_stool___18", "pcr_results_v2_stool___19", "pcr_results_v2_stool___20"
+)
+
+pcr_labels <- c(
+  "Salmonella",              "Shigella spp. & EIEC", "Campylobacter jejuni",
+  "Campylobacter coli",      "Clostridium difficile", "Shiga toxin 1",
+  "Shiga toxin 2",           "Yersinia",              "Aeromonas spp.",
+  "Giardia duodenalis",      "Cryptosporidium",       "Entamoeba histolytica",
+  "Norovirus GI",            "Norovirus GII",         "Rotavirus A",
+  "Adenovirus",              "Astrovirus",            "Sapovirus"
+)
+
+# Step 3: Buat tabel ringkasan hasil PCR
+summary_table <- sortedData %>%
+  filter(redcap_event_name %in% names(event_mapping)) %>%
+  filter(pcr_completed_stool == 1) %>%
+  select(record_id, redcap_event_name, all_of(pcr_vars)) %>%
+  mutate(event_short = dplyr::recode(redcap_event_name, !!!event_mapping)) %>%
+  pivot_longer(
+    cols      = all_of(pcr_vars),
+    names_to  = "pathogen",
+    values_to = "detected"
+  ) %>%
+  filter(detected == 1) %>%
+  mutate(pathogen = factor(pathogen, levels = pcr_vars, labels = pcr_labels)) %>%
+  count(pathogen, event_short, name = "Total") %>%
+  complete(pathogen, event_short = event_list, fill = list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total) %>%
+  adorn_totals(where = "row", name = "Total")
+
+# Step 4: Alternating row colors
+row_colors <- rep(c("#F9F9F9", "#EDEDED"), length.out = nrow(summary_table))
+
+# Step 5: Tampilkan dengan flextable dan styling
+flextable(summary_table) %>%
+  set_caption("Pathogen Detection Count per Event") %>%
+  set_header_labels(
+    pathogen       = "Pathogen",
+    `Follow-up 1`  = "Follow-up 1",
+    `Follow-up 2`  = "Follow-up 2",
+    `Follow-up 3`  = "Follow-up 3",
+    `Follow-up 4`  = "Follow-up 4",
+    `Follow-up 5`  = "Follow-up 5",
+    `Follow-up 6`  = "Follow-up 6"
+  ) %>%
+  bold(i = 1, part = "header") %>%
+  bg(i = 1, part = "header", bg = "#F0F0F0") %>%
+  bg(i = nrow(summary_table), part = "body", bg = "#CFCFCF") %>%  # Baris Total abu-abu
+  bg(i = seq_len(nrow(summary_table)), bg = row_colors) %>%
+  bold(i = nrow(summary_table), part = "body") %>%
+  align(j = 2:ncol(summary_table), align = "center", part = "all") %>%
+  autofit()
+# 
+#   event_mapping <- c(
+#     "followup_1_3_month_arm_1" = "Follow-up 1",
+#     "followup_2_6_month_arm_1" = "Follow-up 2",
+#     "followup_3_9_month_arm_1" = "Follow-up 3",
+#     "followup_4_12_month_arm_1" = "Follow-up 4",
+#     "followup_5_18_month_arm_1" = "Follow-up 5",
+#     "followup_6_23_month_arm_1" = "Follow-up 6"
+#   )
+#   
+#   event_list <- unname(event_mapping)
+#   
+#   # Daftar variabel hasil PCR dan label
+#   pcr_vars <- c(
+#     "pcr_results_v2_stool___1", "pcr_results_v2_stool___2", "pcr_results_v2_stool___3",
+#     "pcr_results_v2_stool___4", "pcr_results_v2_stool___5", "pcr_results_v2_stool___7",
+#     "pcr_results_v2_stool___8", "pcr_results_v2_stool___9", "pcr_results_v2_stool___11",
+#     "pcr_results_v2_stool___12", "pcr_results_v2_stool___13", "pcr_results_v2_stool___14",
+#     "pcr_results_v2_stool___15", "pcr_results_v2_stool___16", "pcr_results_v2_stool___17",
+#     "pcr_results_v2_stool___18", "pcr_results_v2_stool___19", "pcr_results_v2_stool___20"
+#   )
+#   
+#   pcr_labels <- c(
+#     "Salmonella", "Shigella spp. & EIEC", "Campylobacter jejuni",
+#     "Campylobacter coli", "Clostridium difficile", "Shiga toxin 1",
+#     "Shiga toxin 2", "Yersinia", "Aeromonas spp.",
+#     "Giardia duodenalis", "Cryptosporidium", "Entamoeba histolytica",
+#     "Norovirus GI", "Norovirus GII", "Rotavirus A",
+#     "Adenovirus", "Astrovirus", "Sapovirus"
+#   )
+#   
+#   # Proses data
+#   summary_table <- sortedData %>%
+#     filter(redcap_event_name %in% names(event_mapping)) %>%
+#     filter(pcr_completed_stool == 1) %>%
+#     select(record_id, redcap_event_name, all_of(pcr_vars)) %>%
+#     mutate(event_short = dplyr::recode(redcap_event_name, !!!event_mapping)) %>%
+#     pivot_longer(cols = all_of(pcr_vars),
+#                  names_to = "pathogen",
+#                  values_to = "detected") %>%
+#     filter(detected == 1) %>%
+#     mutate(pathogen = factor(pathogen, levels = pcr_vars, labels = pcr_labels)) %>%
+#     count(pathogen, event_short, name = "Total") %>%
+#     complete(pathogen, event_short = event_list, fill = list(Total = 0)) %>%
+#     pivot_wider(names_from = event_short, values_from = Total) %>%
+#     adorn_totals(where = "row", name = "Total")
+#   
+#   # Tampilkan tabel
+#   summary_table %>%
+#     flextable() %>%
+#     set_caption("Pathogen detection count per event") %>%
+#     set_header_labels(
+#       pathogen = "Pathogen",
+#       `Follow-up 1` = "Follow-up 1",
+#       `Follow-up 2` = "Follow-up 2",
+#       `Follow-up 3` = "Follow-up 3",
+#       `Follow-up 4` = "Follow-up 4",
+#       `Follow-up 5` = "Follow-up 5",
+#       `Follow-up 6` = "Follow-up 6"
+#     ) %>%
+#     autofit()
+```
+
+##  {background-image="background.jpg"}
+
+##### Stool Laboratory (Culture Result status by periode of follow up)
+
+```{r}
+
+# Mapping REDCap event ke label pendek
+event_mapping <- c(
+  "followup_1_3_month_arm_1" = "Follow-up 1",
+  "followup_2_6_month_arm_1" = "Follow-up 2",
+  "followup_3_9_month_arm_1" = "Follow-up 3",
+  "followup_4_12_month_arm_1" = "Follow-up 4",
+  "followup_5_18_month_arm_1" = "Follow-up 5",
+  "followup_6_23_month_arm_1" = "Follow-up 6"
+)
+event_list <- unname(event_mapping)
+# Variabel dan label Culture Stool
+culture_vars <- c(
+  "culture_stool___1", "culture_stool___2", "culture_stool___3",
+  "culture_stool___4", "culture_stool___5", "culture_stool___6"
+)
+culture_labels <- c(
+  "Campylobacter coli", "Campylobacter jejuni", "Other Campylobacter spp.",
+  "Salmonella spp. (non-Typhi)", "Salmonella Typhi", "Other"
+)
+# Proses data
+culture_summary <- sortedData %>%
+  filter(redcap_event_name %in% names(event_mapping)) %>%
+  select(record_id, redcap_event_name, all_of(culture_vars)) %>%
+  mutate(event_short = dplyr::recode(redcap_event_name, !!!event_mapping)) %>%
+  pivot_longer(cols = all_of(culture_vars),
+               names_to = "culture_result",
+               values_to = "detected") %>%
+  filter(detected == 1) %>%
+  mutate(culture_result = factor(culture_result, levels = culture_vars, labels = culture_labels)) %>%
+  count(culture_result, event_short, name = "Total") %>%
+  complete(culture_result, event_short = event_list, fill = list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total) %>%
+  adorn_totals(where = "row", name = "Total")
+# Tampilkan tabel
+culture_summary %>%
+  flextable() %>%
+  set_caption("Culture stool results by follow-up event") %>%
+  set_header_labels(
+    culture_result = "Culture Result",
+    `Follow-up 1` = "Follow-up 1",
+    `Follow-up 2` = "Follow-up 2",
+    `Follow-up 3` = "Follow-up 3",
+    `Follow-up 4` = "Follow-up 4",
+    `Follow-up 5` = "Follow-up 5",
+    `Follow-up 6` = "Follow-up 6"
+  ) %>%
+  add_header_lines(values = "Table 1:Culture stool results by follow-up event") %>%
+  bold(i = 1, part = "header") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%
+  # align(part = "header", align = "center") %>%
+  align(j = 2:7, align = "center", part = "all") %>%
+  autofit()
+
+event_mapping2 <- tibble::tribble(
+  ~redcap_event_name,                  ~event_short,
+  "followup_1_3_month_arm_1",          "Follow-up 1",
+  "followup_2_6_month_arm_1",          "Follow-up 2",
+  "followup_3_9_month_arm_1",          "Follow-up 3",
+  "followup_4_12_month_arm_1",         "Follow-up 4",
+  "followup_5_18_month_arm_1",         "Follow-up 5",
+  "followup_6_23_month_arm_1",         "Follow-up 6"
+)
+
+variables_of_interest <- c("culture_stool___3")
+all_combinations <- tidyr::crossing(
+  event_short = event_mapping2$event_short,
+  Variable = variables_of_interest
+)
+
+# Hitung jumlah isian 1 dan NA
+summary_table <- sortedData %>%
+  inner_join(event_mapping2, by = "redcap_event_name") %>%
+  select(event_short, all_of(variables_of_interest)) %>%
+  mutate(across(all_of(variables_of_interest), ~na_if(as.character(.), ""))) %>%
+  pivot_longer(cols = -event_short, names_to = "Variable", values_to = "Value") %>%
+  full_join(all_combinations, by = c("event_short", "Variable")) %>%
+  group_by(event_short, Variable) %>%
+  summarise(
+    Total_1 = sum(Value == "1", na.rm = TRUE),
+    Total_NA = sum(is.na(Value)),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = starts_with("Total_"), names_to = "Status", values_to = "Count") %>%
+  pivot_wider(names_from = event_short, values_from = Count, values_fill = 0)
+
+# Tampilkan dalam flextable
+flextable(summary_table) %>%
+  add_header_lines(values = "Table 2: Number of Entries Specifying 'Other' Campylobacter spp. Culture Results") %>%
+  bold(i = 1, part = "header") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%
+  # align(part = "header", align = "center") %>%
+  align(j = 3:8, align = "center", part = "all") %>% 
+  autofit()
+
+
+```
+
+##  {background-image="background.jpg"}
+
+###### Stool Laboratory Form summary (Data Checking by periode)
+
+```{r}
+event_mapping2 <- tibble::tribble(
+  ~redcap_event_name,                  ~event_short,
+  "followup_1_3_month_arm_1",          "Follow-up 1",
+  "followup_2_6_month_arm_1",          "Follow-up 2",
+  "followup_3_9_month_arm_1",          "Follow-up 3",
+  "followup_4_12_month_arm_1",         "Follow-up 4",
+  "followup_5_18_month_arm_1",         "Follow-up 5",
+  "followup_6_23_month_arm_1",         "Follow-up 6"
+)
+
+# Daftar variabel yang ingin dihitung
+variables_of_interest <- c(
+  "sample_tested_stool", "sample_received_stool", "accession_number_stool",
+  "participantid_stool", "lab_tech_stool", "labform_completion_stool",
+  "labform_redcapentry_stool", "rn_redcap_stool"
+)
+
+# Buat kombinasi semua variabel dan follow-up agar tetap muncul walaupun kosong
+all_combinations <- tidyr::crossing(
+  event_short = event_mapping2$event_short,
+  Variable = variables_of_interest
+)
+
+# Hitung jumlah data terisi
+summary_table <- sortedData %>%
+  inner_join(event_mapping2, by = "redcap_event_name") %>%
+  select(event_short, all_of(variables_of_interest)) %>%
+  mutate(across(all_of(variables_of_interest), as.character)) %>%
+  pivot_longer(cols = -event_short, names_to = "Variable", values_to = "Value") %>%
+  full_join(all_combinations, by = c("event_short", "Variable")) %>%
+  group_by(event_short, Variable) %>%
+  summarise(Number = sum(!is.na(Value)), .groups = "drop") %>%
+  pivot_wider(names_from = event_short, values_from = Number, values_fill = 0)
+
+# Buat flextable
+ft <- flextable(summary_table)
+n_cols <- ncol(summary_table)
+grid_colors <- rep(c("#ffffff", "#F0F0F0"), length.out = n_cols)
+
+for (j in seq_len(n_cols)) {
+  ft <- ft %>%
+    bg(j = j, bg = grid_colors[j], part = "body")
+}
+ft %>%
+  add_header_lines(values = "Tabel 1: Counting Data with Character and Date Types") %>%
+  bold(i = 1, part = "header") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%
+  align(part = "header", align = "center") %>%
+  align(j = 2:n_cols, align = "center", part = "all") %>%
+  autofit()
+
+
+event_mapping2 <- tibble::tribble(
+  ~redcap_event_name,                  ~event_short,
+  "followup_1_3_month_arm_1",          "Follow-up 1",
+  "followup_2_6_month_arm_1",          "Follow-up 2",
+  "followup_3_9_month_arm_1",          "Follow-up 3",
+  "followup_4_12_month_arm_1",         "Follow-up 4",
+  "followup_5_18_month_arm_1",         "Follow-up 5",
+  "followup_6_23_month_arm_1",         "Follow-up 6")
+variables_of_interest <- c(
+  "sample_tested_stool", "sample_received_stool", "accession_number_stool",
+  "participantid_stool", "lab_tech_stool", "labform_completion_stool",
+  "labform_redcapentry_stool", "rn_redcap_stool")
+all_combinations <- tidyr::crossing(
+  event_short = event_mapping2$event_short,
+  Variable = variables_of_interest)
+
+summary_table <- sortedData %>%
+  inner_join(event_mapping2, by = "redcap_event_name") %>%
+  select(event_short, all_of(variables_of_interest)) %>%
+  mutate(across(all_of(variables_of_interest), ~na_if(as.character(.), ""))) %>%
+  pivot_longer(cols = -event_short, names_to = "Variable", values_to = "Value") %>%
+  full_join(all_combinations, by = c("event_short", "Variable")) %>%
+  group_by(event_short, Variable) %>%
+  summarise(Number = sum(is.na(Value)), .groups = "drop") %>%
+  pivot_wider(names_from = event_short, values_from = Number, values_fill = 0)
+
+ft <- flextable(summary_table)
+n_cols <- ncol(summary_table)
+grid_colors <- rep(c("#ffffff", "#F0F0F0"), length.out = n_cols)
+
+for (j in seq_len(n_cols)) {
+  ft <- ft %>%
+    bg(j = j, bg = grid_colors[j], part = "body")}
+
+ft %>%
+  add_header_lines(values = "Table 2: Counting Missing (NA) Data") %>%
+  bold(i = 1, part = "header") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%
+  align(part = "header", align = "center") %>%
+  align(j = 2:n_cols, align = "center", part = "all") %>%
+  autofit()
+
+```
+
+##  {background-image="background.jpg"}
+
+### Ditribuition of Water Sample
+
+```{r}
+event_mapping2 <- tibble::tribble(
+  ~redcap_event_name,                  ~event_short,
+  "followup_1_3_month_arm_1",          "Follow-up 1",
+  "followup_2_6_month_arm_1",          "Follow-up 2",
+  "followup_3_9_month_arm_1",          "Follow-up 3",
+  "followup_4_12_month_arm_1",         "Follow-up 4",
+  "followup_5_18_month_arm_1",         "Follow-up 5",
+  "followup_6_23_month_arm_1",         "Follow-up 6"
+)
+
+# Label dari water_simple
+water_simple_labels <- tibble::tribble(
+  ~water_simple, ~Water_Simple_Label,
+  "1", "Yes",
+  "0", "No"
+)
+# Kombinasi lengkap semua kategori dan event
+all_combinations <- tidyr::crossing(
+  event_short = event_mapping2$event_short,
+  Water_Simple_Label = water_simple_labels$Water_Simple_Label
+)
+# Hitung data
+summary_water_sample <- sortedData %>%
+  inner_join(event_mapping2, by = "redcap_event_name") %>%
+  mutate(water_simple = na_if(as.character(water_simple), "")) %>%
+  left_join(water_simple_labels, by = "water_simple") %>%
+  count(event_short, Water_Simple_Label, name = "Total") %>%
+  full_join(all_combinations, by = c("event_short", "Water_Simple_Label")) %>%
+  replace_na(list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total, values_fill = 0)
+
+# Tambah baris total di bawah
+summary_with_total <- summary_water_sample %>%
+  mutate(across(-Water_Simple_Label, as.integer)) %>%
+  bind_rows(
+    summary_water_sample %>%
+      summarise(across(-Water_Simple_Label, sum)) %>%
+      mutate(Water_Simple_Label = "Total")
+  )
+
+# Tampilkan flextable
+flextable(summary_with_total) %>%
+  add_header_lines(values = "Table 1: Number of Yes/No for Water Simple (Amostra Bee)") %>%
+  bold(i = 1, part = "header") %>%
+  bold(i = ~Water_Simple_Label == "Total", part = "body") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%
+  bg(i = ~Water_Simple_Label == "Total", bg = "#D9EDF7") %>%
+  align(part = "header", align = "center") %>%
+  autofit()
+
+###########
+event_mapping2 <- tibble::tribble(
+  ~redcap_event_name,                  ~event_short,
+  "followup_1_3_month_arm_1",          "Follow-up 1",
+  "followup_2_6_month_arm_1",          "Follow-up 2",
+  "followup_3_9_month_arm_1",          "Follow-up 3",
+  "followup_4_12_month_arm_1",         "Follow-up 4",
+  "followup_5_18_month_arm_1",         "Follow-up 5",
+  "followup_6_23_month_arm_1",         "Follow-up 6"
+)
+water_labels <- tibble::tribble(
+  ~water_source, ~Water_Source_Label,
+  "1", "Bee-Torneira (Tap/pipe water)",
+  "2", "Be Galon (Bottled water)",
+  "3", "Be Fura (Well/borehole water)",
+  "4", "Be Matan (Spring water)",
+  "5", "Mota (River)",
+  "6", "Water truck (bombeiros)",
+  "7", "Rain water (udan ben)",
+  "8", "Fontes Seluk (Other source)"
+)
+
+# Kombinasi lengkap semua kategori dan event
+all_combinations <- tidyr::crossing(
+  event_short = event_mapping2$event_short,
+  Water_Source_Label = water_labels$Water_Source_Label
+)
+
+# Hitung data
+summary_Water_s <- sortedData %>%
+  inner_join(event_mapping2, by = "redcap_event_name") %>%
+  mutate(water_source = na_if(as.character(water_source), "")) %>%
+  left_join(water_labels, by = "water_source") %>%
+  count(event_short, Water_Source_Label, name = "Total") %>%
+  full_join(all_combinations, by = c("event_short", "Water_Source_Label")) %>%
+  replace_na(list(Total = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Total, values_fill = 0)
+
+# Tambah baris total di bawah
+summary_with_total <- summary_Water_s %>%
+  mutate(across(-Water_Source_Label, as.integer)) %>%
+  bind_rows(
+    summary_Water_s %>%
+      summarise(across(-Water_Source_Label, sum)) %>%
+      mutate(Water_Source_Label = "Total")
+  )
+
+# Tampilkan tabel
+flextable(summary_with_total) %>%
+  add_header_lines(values = "Table 2: Distribuition of Water Sources (Fontes Bee) by Follow-up 1-6") %>%
+  bold(i = 1, part = "header") %>%
+  bold(i = ~Water_Source_Label == "Total", part = "body") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%
+  bg(i = ~Water_Source_Label == "Total", bg = "#D9EDF7") %>%
+  align(part = "header", align = "center") %>%
+  autofit()
+
+#########
+event_mapping2 <- tibble::tribble(
+  ~redcap_event_name,                  ~event_short,
+  "followup_1_3_month_arm_1",          "Follow-up 1",
+  "followup_2_6_month_arm_1",          "Follow-up 2",
+  "followup_3_9_month_arm_1",          "Follow-up 3",
+  "followup_4_12_month_arm_1",         "Follow-up 4",
+  "followup_5_18_month_arm_1",         "Follow-up 5",
+  "followup_6_23_month_arm_1",         "Follow-up 6"
+)
+all_combinations <- tibble::tibble(
+  event_short = event_mapping2$event_short,
+  Variable = "lab_other_wtr_source"
+)
+Water_others_S <- sortedData %>%
+  inner_join(event_mapping2, by = "redcap_event_name") %>%
+  select(event_short, lab_other_wtr_source) %>%
+  mutate(lab_other_wtr_source = na_if(as.character(lab_other_wtr_source), "")) %>%
+  mutate(Variable = "lab_other_wtr_source") %>%
+  group_by(event_short, Variable) %>%
+  summarise(Filled = sum(!is.na(lab_other_wtr_source)), .groups = "drop") %>%
+  full_join(all_combinations, by = c("event_short", "Variable")) %>%
+  replace_na(list(Filled = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Filled, values_fill = 0)
+
+summary_with_total <- Water_others_S %>%
+  mutate(across(-Variable, as.integer)) %>%
+  bind_rows(
+    Water_others_S %>%
+      summarise(across(-Variable, sum)) %>%
+      mutate(Variable = "Total"))
+flextable(summary_with_total) %>%
+  add_header_lines(values = "Table 3: Number of Specify if other water source") %>%
+  bold(i = 1, part = "header") %>%
+  bold(i = ~Variable == "Total", part = "body") %>%
+  bg(part = "header", bg = "#F0F0F0") %>%
+  bg(i = ~Variable == "Total", bg = "#D9EDF7") %>%
+  align(part = "header", align = "center") %>%
+  autofit()
+
+
+```
+
+##  {background-image="background.jpg"}
+
+###### Water Culture Result (Detected / Not Detected) by Type and Follow-up
+
+```{r}
+
+# Step 1: Mapping event REDCap ke singkatan
+event_mapping2 <- tibble::tribble(
+  ~redcap_event_name,          ~event_short,
+  "followup_1_3_month_arm_1",  "Follow-up 1",
+  "followup_2_6_month_arm_1",  "Follow-up 2",
+  "followup_3_9_month_arm_1",  "Follow-up 3",
+  "followup_4_12_month_arm_1", "Follow-up 4",
+  "followup_5_18_month_arm_1", "Follow-up 5",
+  "followup_6_23_month_arm_1", "Follow-up 6"
+)
+
+# Step 2: Variabel kultur air
+culture_vars <- c(
+  "water_culture_campylobacter",
+  "water_culture_salmonella",
+  "water_culture_e_coli",
+  "water_culture_coliforms",
+  "water_culture_others"
+)
+
+# Step 3: Label hasil kultur
+result_labels <- c(
+  "1" = "Detected on culture",
+  "2" = "Not Detected on culture"
+)
+
+# Step 4: Semua kombinasi yang mungkin
+all_combinations <- tidyr::crossing(
+  Culture_Type = culture_vars,
+  Result       = unname(result_labels),
+  event_short  = event_mapping2$event_short
+)
+
+# Step 5: Proses utama
+summary_table <- sortedData %>%
+  inner_join(event_mapping2, by = "redcap_event_name") %>%
+  select(event_short, all_of(culture_vars)) %>%
+  pivot_longer(
+    cols      = -event_short,
+    names_to  = "Culture_Type",
+    values_to = "Result"
+  ) %>%
+  filter(Result %in% c(1, 2)) %>%
+  mutate(Result = recode(as.character(Result), !!!result_labels)) %>%
+  group_by(Culture_Type, Result, event_short) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  full_join(all_combinations, by = c("Culture_Type", "Result", "event_short")) %>%
+  replace_na(list(Count = 0)) %>%
+  pivot_wider(names_from = event_short, values_from = Count, values_fill = 0) %>%
+  arrange(Culture_Type, Result)
+
+# Step 6: Alternating row colors
+row_colors <- rep(c("#F9F9F9", "#EDEDED"), length.out = nrow(summary_table))
+
+# Step 7: Flextable dengan styling
+flextable(summary_table) %>%
+  set_caption("Table: Culture Result (Detected / Not Detected) by Type and Follow-up") %>%
+  bold(i = 1, part = "header") %>%
+  bg(i = 1, part = "header", bg = "#F0F0F0") %>%
+  bg(i = seq_len(nrow(summary_table)), bg = row_colors) %>%
+  align(part = "header", align = "center") %>%
+  align(j = 3:ncol(summary_table), align = "center", part = "all") %>%
+  autofit()
+
+# # Mapping event REDCap ke singkatan
+# event_mapping2 <- tibble::tribble(
+#   ~redcap_event_name,                  ~event_short,
+#   "followup_1_3_month_arm_1",          "Follow-up 1",
+#   "followup_2_6_month_arm_1",          "Follow-up 2",
+#   "followup_3_9_month_arm_1",          "Follow-up 3",
+#   "followup_4_12_month_arm_1",         "Follow-up 4",
+#   "followup_5_18_month_arm_1",         "Follow-up 5",
+#   "followup_6_23_month_arm_1",         "Follow-up 6"
+# )
+# 
+# # Variabel kultur air
+# culture_vars <- c(
+#   "water_culture_campylobacter",
+#   "water_culture_salmonella",
+#   "water_culture_e_coli",
+#   "water_culture_coliforms",
+#   "water_culture_others"
+# )
+# 
+# # Label hasil kultur
+# result_labels <- c(
+#   "1" = "Detected on culture",
+#   "2" = "Not Detected on culture"
+# )
+# 
+# # Semua kombinasi yang mungkin
+# all_combinations <- tidyr::crossing(
+#   Culture_Type = culture_vars,
+#   Result = c("Detected on culture", "Not Detected on culture"),
+#   event_short = event_mapping2$event_short
+# )
+# 
+# # Proses utama
+# summary_table <- sortedData %>%
+#   inner_join(event_mapping2, by = "redcap_event_name") %>%
+#   select(event_short, all_of(culture_vars)) %>%
+#   pivot_longer(cols = -event_short, names_to = "Culture_Type", values_to = "Result") %>%
+#   filter(Result %in% c(1, 2)) %>%
+#   mutate(Result = recode(as.character(Result), !!!result_labels)) %>%
+#   group_by(Culture_Type, Result, event_short) %>%
+#   summarise(Count = n(), .groups = "drop") %>%
+#   full_join(all_combinations, by = c("Culture_Type", "Result", "event_short")) %>%
+#   replace_na(list(Count = 0)) %>%
+#   pivot_wider(names_from = event_short, values_from = Count, values_fill = 0) %>%
+#   arrange(Culture_Type, Result)
+# 
+# # Tampilkan tabel dengan flextable
+# flextable(summary_table) %>%
+#   add_header_lines(values = "Table: Culture Result (Detected / Not Detected) by Type and Follow-up") %>%
+#   bold(i = 1, part = "header") %>%
+#   bg(part = "header", bg = "#F0F0F0") %>%
+#   align(part = "header", align = "center") %>%
+#   autofit()
+```
+
+##  {background-image="background.jpg"}
+
+## Next Reports – List of Forms
+
+```{r}
+
+```
